@@ -1,0 +1,17 @@
+Test,Expected,Actual,Result
+Obj2: 9 slots reported,9,9,PASS
+Obj2: preset test1 picks A1 (score 0.2),A1,A1,PASS
+Obj2: preset test2 picks A1 (score 0.4),A1,A1,PASS
+Obj2: default layout picks A2 (score 0.38),A2,A2,PASS
+Obj2: AI picks A3 where baseline picks A2,"scored=A3, baseline=A2, same_choice=False","scored=A3, baseline=A2, same_choice=False",PASS
+Obj2: recommendation changes after A3 is taken,A2,A2,PASS
+Obj2: all slots full -> no slot recommended,None,None,PASS
+Obj2: recommendations are logged in SQLite,at least 1 row,5 rows,PASS
+Obj3: latest air reading available,200,200,PASS
+Obj3: readings are stored in SQLite,total_readings > 0,2396,PASS
+Obj1: Arduino connected,True,False,FAIL
+Obj1: entry denied when parking full,-,Arduino offline,SKIP
+Obj1: unregistered QR denied,-,Arduino offline,SKIP
+"Obj1: entry granted, wallet charged, AI slot returned",-,Arduino offline,SKIP
+Obj1: second scan exits the car,-,Arduino offline,SKIP
+Obj1: gate events logged in SQLite,-,Arduino offline,SKIP

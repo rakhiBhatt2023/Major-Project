@@ -1,0 +1,715 @@
+{
+  "step": "test_run",
+  "timestamp": "2026-10-08T13:29:55.852439",
+  "camera_health": {
+    "error": "Could not reach /api/camera/health: HTTPConnectionPool(host='127.0.0.1', port=5000): Max retries exceeded with url: /api/camera/health (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=5000): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  "transactions_last_20": [
+    {
+      "id": 88,
+      "transaction_id": "TX-923C1F5A",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "B1",
+      "timestamp": "2026-10-08T13:29:26",
+      "error_reason": null
+    },
+    {
+      "id": 87,
+      "transaction_id": "TX-40DFEE91",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:29:24",
+      "error_reason": null
+    },
+    {
+      "id": 86,
+      "transaction_id": "TX-9291A95E",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": null,
+      "timestamp": "2026-10-08T13:29:24",
+      "error_reason": "PARKING_FULL"
+    },
+    {
+      "id": 85,
+      "transaction_id": "TX-BF7FB277",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": null,
+      "timestamp": "2026-10-08T13:29:24",
+      "error_reason": "CAMERA_OFFLINE"
+    },
+    {
+      "id": 84,
+      "transaction_id": "TX-76A11F1A",
+      "qr": "INVALID-DRIVER-9999",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:29:24",
+      "error_reason": "INVALID_QR"
+    },
+    {
+      "id": 83,
+      "transaction_id": "TX-CFFF9628",
+      "qr": "96e97a15-cce4-4301-b470-f0cd878a7348",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A1",
+      "timestamp": "2026-10-08T13:29:24",
+      "error_reason": null
+    },
+    {
+      "id": 82,
+      "transaction_id": "TX-DBTEST-4c59a0",
+      "qr": "QR-123",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A1",
+      "timestamp": "2026-10-08T13:29:23",
+      "error_reason": null
+    },
+    {
+      "id": 81,
+      "transaction_id": "TX-AF27E6D4",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:28:48",
+      "error_reason": null
+    },
+    {
+      "id": 80,
+      "transaction_id": "TX-A32E1441",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": null,
+      "timestamp": "2026-10-08T13:28:48",
+      "error_reason": "PARKING_FULL"
+    },
+    {
+      "id": 79,
+      "transaction_id": "TX-E773B012",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": null,
+      "timestamp": "2026-10-08T13:28:48",
+      "error_reason": "CAMERA_OFFLINE"
+    },
+    {
+      "id": 78,
+      "transaction_id": "TX-0BFCA305",
+      "qr": "INVALID-DRIVER-9999",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:28:48",
+      "error_reason": "INVALID_QR"
+    },
+    {
+      "id": 77,
+      "transaction_id": "TX-4124214F",
+      "qr": "a1f46cb9-b408-427b-80c5-a2b99460225d",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A1",
+      "timestamp": "2026-10-08T13:28:48",
+      "error_reason": null
+    },
+    {
+      "id": 76,
+      "transaction_id": "TX-DBTEST-24ef5f",
+      "qr": "QR-123",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A1",
+      "timestamp": "2026-10-08T13:28:48",
+      "error_reason": null
+    },
+    {
+      "id": 75,
+      "transaction_id": "TX-75281651",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:26:13",
+      "error_reason": null
+    },
+    {
+      "id": 74,
+      "transaction_id": "TX-7B5C2192",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": null,
+      "timestamp": "2026-10-08T13:26:13",
+      "error_reason": "PARKING_FULL"
+    },
+    {
+      "id": 73,
+      "transaction_id": "TX-36D25CCF",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": null,
+      "timestamp": "2026-10-08T13:26:13",
+      "error_reason": "CAMERA_OFFLINE"
+    },
+    {
+      "id": 72,
+      "transaction_id": "TX-26E20E56",
+      "qr": "INVALID-DRIVER-9999",
+      "action": "ENTRY",
+      "status": "FAILED",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:26:13",
+      "error_reason": "INVALID_QR"
+    },
+    {
+      "id": 71,
+      "transaction_id": "TX-0F07C2B6",
+      "qr": "67a98049-f5b2-4dcf-93d8-9c2adc80c043",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A1",
+      "timestamp": "2026-10-08T13:26:13",
+      "error_reason": null
+    },
+    {
+      "id": 70,
+      "transaction_id": "TX-DBTEST-ddfe89",
+      "qr": "QR-123",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A1",
+      "timestamp": "2026-10-08T13:26:13",
+      "error_reason": null
+    },
+    {
+      "id": 69,
+      "transaction_id": "TX-83FE9B12",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "action": "ENTRY",
+      "status": "SUCCESS",
+      "fee": 20.0,
+      "slot_id": "A2",
+      "timestamp": "2026-10-08T13:23:12",
+      "error_reason": null
+    }
+  ],
+  "reservations_last_20": [
+    {
+      "id": 60,
+      "slot_id": "B1",
+      "tx_id": "TX-923C1F5A",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:29:26",
+      "expires_at": "2026-10-08T13:30:26"
+    },
+    {
+      "id": 59,
+      "slot_id": "A2",
+      "tx_id": "TX-40DFEE91",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:29:24",
+      "expires_at": "2026-10-08T13:30:24"
+    },
+    {
+      "id": 58,
+      "slot_id": "A2",
+      "tx_id": "TX-76A11F1A",
+      "qr": "INVALID-DRIVER-9999",
+      "status": "CANCELLED",
+      "reserved_at": "2026-10-08T13:29:24",
+      "expires_at": "2026-10-08T13:30:24"
+    },
+    {
+      "id": 57,
+      "slot_id": "A1",
+      "tx_id": "TX-CFFF9628",
+      "qr": "96e97a15-cce4-4301-b470-f0cd878a7348",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:29:24",
+      "expires_at": "2026-10-08T13:30:24"
+    },
+    {
+      "id": 56,
+      "slot_id": "A1",
+      "tx_id": "TX-DBTEST-4c59a0",
+      "qr": "QR-123",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:29:23",
+      "expires_at": "2026-10-08T13:30:23"
+    },
+    {
+      "id": 55,
+      "slot_id": "A2",
+      "tx_id": "TX-AF27E6D4",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:28:48",
+      "expires_at": "2026-10-08T13:29:48"
+    },
+    {
+      "id": 54,
+      "slot_id": "A2",
+      "tx_id": "TX-0BFCA305",
+      "qr": "INVALID-DRIVER-9999",
+      "status": "CANCELLED",
+      "reserved_at": "2026-10-08T13:28:48",
+      "expires_at": "2026-10-08T13:29:48"
+    },
+    {
+      "id": 53,
+      "slot_id": "A1",
+      "tx_id": "TX-4124214F",
+      "qr": "a1f46cb9-b408-427b-80c5-a2b99460225d",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:28:48",
+      "expires_at": "2026-10-08T13:29:48"
+    },
+    {
+      "id": 52,
+      "slot_id": "A1",
+      "tx_id": "TX-DBTEST-24ef5f",
+      "qr": "QR-123",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:28:48",
+      "expires_at": "2026-10-08T13:29:48"
+    },
+    {
+      "id": 51,
+      "slot_id": "A2",
+      "tx_id": "TX-75281651",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:26:13",
+      "expires_at": "2026-10-08T13:27:13"
+    },
+    {
+      "id": 50,
+      "slot_id": "A2",
+      "tx_id": "TX-26E20E56",
+      "qr": "INVALID-DRIVER-9999",
+      "status": "CANCELLED",
+      "reserved_at": "2026-10-08T13:26:13",
+      "expires_at": "2026-10-08T13:27:13"
+    },
+    {
+      "id": 49,
+      "slot_id": "A1",
+      "tx_id": "TX-0F07C2B6",
+      "qr": "67a98049-f5b2-4dcf-93d8-9c2adc80c043",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:26:13",
+      "expires_at": "2026-10-08T13:27:13"
+    },
+    {
+      "id": 48,
+      "slot_id": "A1",
+      "tx_id": "TX-DBTEST-ddfe89",
+      "qr": "QR-123",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:26:13",
+      "expires_at": "2026-10-08T13:27:13"
+    },
+    {
+      "id": 47,
+      "slot_id": "A2",
+      "tx_id": "TX-83FE9B12",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:23:12",
+      "expires_at": "2026-10-08T13:24:12"
+    },
+    {
+      "id": 46,
+      "slot_id": "A2",
+      "tx_id": "TX-16589E36",
+      "qr": "INVALID-DRIVER-9999",
+      "status": "CANCELLED",
+      "reserved_at": "2026-10-08T13:23:12",
+      "expires_at": "2026-10-08T13:24:12"
+    },
+    {
+      "id": 45,
+      "slot_id": "A1",
+      "tx_id": "TX-14AE8FF4",
+      "qr": "b934b91a-5976-4fe2-811f-a009251243ac",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:23:12",
+      "expires_at": "2026-10-08T13:24:12"
+    },
+    {
+      "id": 44,
+      "slot_id": "A1",
+      "tx_id": "TX-DBTEST-6ffb9b",
+      "qr": "QR-123",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:23:11",
+      "expires_at": "2026-10-08T13:24:11"
+    },
+    {
+      "id": 43,
+      "slot_id": "A2",
+      "tx_id": "TX-E2F8D766",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:22:46",
+      "expires_at": "2026-10-08T13:23:46"
+    },
+    {
+      "id": 42,
+      "slot_id": "A2",
+      "tx_id": "TX-56A057AD",
+      "qr": "INVALID-DRIVER-9999",
+      "status": "CANCELLED",
+      "reserved_at": "2026-10-08T13:22:45",
+      "expires_at": "2026-10-08T13:23:45"
+    },
+    {
+      "id": 41,
+      "slot_id": "A1",
+      "tx_id": "TX-467A4D9B",
+      "qr": "8975a49c-9a5f-4437-8246-2d7027a4d9ed",
+      "status": "COMPLETED",
+      "reserved_at": "2026-10-08T13:22:45",
+      "expires_at": "2026-10-08T13:23:45"
+    }
+  ],
+  "gate_events_last_20": [
+    {
+      "id": 1378,
+      "event": "ENTRY_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "B1",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:29:26"
+    },
+    {
+      "id": 1377,
+      "event": "EXIT_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "A2",
+      "note": "Exit approved",
+      "timestamp": "2026-10-08T13:29:24"
+    },
+    {
+      "id": 1376,
+      "event": "ENTRY_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "A2",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:29:24"
+    },
+    {
+      "id": 1375,
+      "event": "ENTRY_DENIED_FULL",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": null,
+      "note": "No vacant slots, payment not attempted",
+      "timestamp": "2026-10-08T13:29:24"
+    },
+    {
+      "id": 1374,
+      "event": "ENTRY_DENIED_CAMERA_OFFLINE",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": null,
+      "note": "Camera offline / detection stale",
+      "timestamp": "2026-10-08T13:29:24"
+    },
+    {
+      "id": 1373,
+      "event": "ENTRY_DENIED_PAYMENT",
+      "qr": "INVALID-DRIVER-9999",
+      "slot_id": "A2",
+      "note": "Vehicle not registered",
+      "timestamp": "2026-10-08T13:29:24"
+    },
+    {
+      "id": 1372,
+      "event": "ENTRY_GRANTED",
+      "qr": "96e97a15-cce4-4301-b470-f0cd878a7348",
+      "slot_id": "A1",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:29:24"
+    },
+    {
+      "id": 1371,
+      "event": "EXIT_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "A2",
+      "note": "Exit approved",
+      "timestamp": "2026-10-08T13:28:48"
+    },
+    {
+      "id": 1370,
+      "event": "ENTRY_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "A2",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:28:48"
+    },
+    {
+      "id": 1369,
+      "event": "ENTRY_DENIED_FULL",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": null,
+      "note": "No vacant slots, payment not attempted",
+      "timestamp": "2026-10-08T13:28:48"
+    },
+    {
+      "id": 1368,
+      "event": "ENTRY_DENIED_CAMERA_OFFLINE",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": null,
+      "note": "Camera offline / detection stale",
+      "timestamp": "2026-10-08T13:28:48"
+    },
+    {
+      "id": 1367,
+      "event": "ENTRY_DENIED_PAYMENT",
+      "qr": "INVALID-DRIVER-9999",
+      "slot_id": "A2",
+      "note": "Vehicle not registered",
+      "timestamp": "2026-10-08T13:28:48"
+    },
+    {
+      "id": 1366,
+      "event": "ENTRY_GRANTED",
+      "qr": "a1f46cb9-b408-427b-80c5-a2b99460225d",
+      "slot_id": "A1",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:28:48"
+    },
+    {
+      "id": 1365,
+      "event": "EXIT_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "A2",
+      "note": "Exit approved",
+      "timestamp": "2026-10-08T13:26:13"
+    },
+    {
+      "id": 1364,
+      "event": "ENTRY_GRANTED",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": "A2",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:26:13"
+    },
+    {
+      "id": 1363,
+      "event": "ENTRY_DENIED_FULL",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": null,
+      "note": "No vacant slots, payment not attempted",
+      "timestamp": "2026-10-08T13:26:13"
+    },
+    {
+      "id": 1362,
+      "event": "ENTRY_DENIED_CAMERA_OFFLINE",
+      "qr": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "slot_id": null,
+      "note": "Camera offline / detection stale",
+      "timestamp": "2026-10-08T13:26:13"
+    },
+    {
+      "id": 1361,
+      "event": "ENTRY_DENIED_PAYMENT",
+      "qr": "INVALID-DRIVER-9999",
+      "slot_id": "A2",
+      "note": "Vehicle not registered",
+      "timestamp": "2026-10-08T13:26:13"
+    },
+    {
+      "id": 1360,
+      "event": "ENTRY_GRANTED",
+      "qr": "67a98049-f5b2-4dcf-93d8-9c2adc80c043",
+      "slot_id": "A1",
+      "note": "Entry granted",
+      "timestamp": "2026-10-08T13:26:13"
+    },
+    {
+      "id": 1359,
+      "event": "IR_EXIT",
+      "qr": null,
+      "slot_id": null,
+      "note": "IR sensor triggered",
+      "timestamp": "2026-10-08T13:23:57"
+    }
+  ],
+  "scan_logs_last_20": [
+    {
+      "id": 80,
+      "qrtext": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6",
+      "scantime": "2026-10-08 13:29:26",
+      "result": "SUCCESS",
+      "message": "Entry granted, slot B1"
+    },
+    {
+      "id": 76,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:29:24",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 71,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:28:48",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 66,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:26:13",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 61,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:23:12",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 56,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:22:45",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 51,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:21:53",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 46,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:21:13",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 41,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:19:47",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 36,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:16:55",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 31,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:16:34",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 26,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:14:48",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 21,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:13:13",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 16,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 13:00:46",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 14,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 12:35:48",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 12,
+      "qrtext": "INVALID-DRIVER-9999",
+      "scantime": "2026-10-08 12:34:42",
+      "result": "DENIED",
+      "message": "Vehicle not registered"
+    },
+    {
+      "id": 10,
+      "qrtext": "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf62",
+      "scantime": "2026-10-08 12:14:15",
+      "result": "DENIED",
+      "message": "Parking full"
+    },
+    {
+      "id": 9,
+      "qrtext": "6383880e-d620-41f2-92a8-7a929b0bcbe3",
+      "scantime": "2026-10-08 08:52:07",
+      "result": "SUCCESS",
+      "message": "Entry granted, slot A1"
+    },
+    {
+      "id": 8,
+      "qrtext": "d457cac5-5304-4dca-9775-f1f218597608",
+      "scantime": "2026-10-08 08:52:05",
+      "result": "SUCCESS",
+      "message": "Entry granted, slot A1"
+    },
+    {
+      "id": 7,
+      "qrtext": "ff75af4b-370e-4ebd-afc0-556543c9674c",
+      "scantime": "2026-10-08 08:52:01",
+      "result": "SUCCESS",
+      "message": "Entry granted, slot A1"
+    }
+  ]
+}

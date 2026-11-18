@@ -16,6 +16,7 @@ NOTE: This module does NOT do recommendation, scoring, or slot selection.
 """
 
 import cv2
+import time
 import numpy as np
 
 class RealtimeParkingTracker:
@@ -24,35 +25,35 @@ class RealtimeParkingTracker:
         self.slots = {
             "A1": {"bbox": (60,  100, 130, 95), "distance": 5.0},
             "A2": {"bbox": (220, 100, 130, 95), "distance": 7.0},
-            "A3": {"bbox": (380, 100, 130, 95), "distance": 9.0},
             "B1": {"bbox": (60,  240, 130, 95), "distance": 8.0},
             "B2": {"bbox": (220, 240, 130, 95), "distance": 10.0},
-            "B3": {"bbox": (380, 240, 130, 95), "distance": 12.0},
-            "C1": {"bbox": (60,  380, 130, 95), "distance": 11.0},
-            "C2": {"bbox": (220, 380, 130, 95), "distance": 13.0},
-            "C3": {"bbox": (380, 380, 130, 95), "distance": 15.0},
         }
 
         # PART 3: Configurable Spatial Adjacency Network for Local Congestion
         self.adjacent_network = {
             "A1": ["A2", "B1"],
-            "A2": ["A1", "A3", "B2"],
-            "A3": ["A2", "B3"],
-            "B1": ["A1", "B2", "C1"],
-            "B2": ["A2", "B1", "B3", "C2"],
-            "B3": ["A3", "B2", "C3"],
-            "C1": ["B1", "C2"],
-            "C2": ["B2", "C1", "C3"],
-            "C3": ["B3", "C2"],
+            "A2": ["A1", "B2"],
+            "B1": ["A1", "B2"],
+            "B2": ["A2", "B1"],
         }
 
-        # PART 2 & PART 9: Initial Slot Occupancy Status (Test Mode Default)
+        # PART 2 & PART 9: Initial Slot Occupancy Status (Default: All Vacant)
         self.occupancy_status = {
-            "A1": True,  "A2": False, "A3": False,
-            "B1": True,  "B2": False, "B3": True,
-            "C1": False, "C2": False, "C3": True
+            "A1": False, "A2": False,
+            "B1": False, "B2": False,
         }
         self.roi_pixel_counts = {k: 0 for k in self.slots}
+        self.baseline_rois = {}
+
+        # Camera Health & Reservation State
+        self.last_frame_timestamp = 0.0      # Monotonic timestamp of last successful cap.read()
+        self.last_detection_timestamp = 0.0  # Monotonic timestamp of last frame ROI inference
+        self.STALE_TIMEOUT = 10.0            # seconds (strict safety threshold)
+        self.consecutive_failures = 0
+        self.reconnect_attempts = 0
+        self.last_reconnect_time = 0.0
+        self.active_backend_name = "CAP_DSHOW"
+        self.reservations = {}               # { slot_id: { tx_id, qr, timestamp, expire_at } }
 
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=25, detectShadows=False)
 
@@ -63,18 +64,138 @@ class RealtimeParkingTracker:
 
         self.init_camera()
 
+    def is_camera_healthy(self) -> bool:
+        """Returns True if webcam is active, fresh frames are captured, AND fresh detection is processed."""
+        if not self.use_live_webcam or not self.cap or not self.cap.isOpened():
+            return False
+        now = time.monotonic()
+        frame_fresh = (now - self.last_frame_timestamp) < self.STALE_TIMEOUT
+        detection_fresh = (now - self.last_detection_timestamp) < self.STALE_TIMEOUT
+        return frame_fresh and detection_fresh
+
+    def get_unhealthy_reason(self) -> str:
+        """Returns an explicit human-readable string explaining why the camera/detection is unhealthy."""
+        if not self.use_live_webcam:
+            if getattr(self, 'reconnect_attempts', 0) > 0:
+                return f"reconnecting (attempt {self.reconnect_attempts})"
+            return "camera stopped"
+        if not self.cap or not self.cap.isOpened():
+            return "camera device unopened"
+        now = time.monotonic()
+        frame_age = round(now - self.last_frame_timestamp, 1) if self.last_frame_timestamp > 0 else 9999.0
+        detection_age = round(now - self.last_detection_timestamp, 1) if self.last_detection_timestamp > 0 else 9999.0
+        if frame_age >= self.STALE_TIMEOUT:
+            return f"no frame for {frame_age}s"
+        if detection_age >= self.STALE_TIMEOUT:
+            return f"detection stale for {detection_age}s"
+        return "healthy"
+
+    def get_camera_health_info(self) -> dict:
+        """Returns detailed camera diagnostic metrics for debugging and API health status."""
+        import os
+        now = time.monotonic()
+        frame_age = round(now - self.last_frame_timestamp, 2) if self.last_frame_timestamp > 0 else 9999.0
+        detection_age = round(now - self.last_detection_timestamp, 2) if self.last_detection_timestamp > 0 else 9999.0
+        opened = bool(self.cap and self.cap.isOpened())
+        return {
+            "camera_opened": opened,
+            "use_live_webcam": self.use_live_webcam,
+            "camera_index": self.active_camera_index,
+            "last_frame_age_seconds": frame_age,
+            "last_detection_age_seconds": detection_age,
+            "unhealthy_reason": self.get_unhealthy_reason(),
+            "consecutive_read_failures": getattr(self, "consecutive_failures", 0),
+            "reconnect_attempts": getattr(self, "reconnect_attempts", 0),
+            "backend_used": getattr(self, "active_backend_name", "CAP_DSHOW"),
+            "process_id": os.getpid(),
+            "is_healthy": self.is_camera_healthy()
+        }
+
+    def cleanup_expired_reservations(self):
+        """Releases slot reservations older than their expiration duration."""
+        now = time.time()
+        expired = [s for s, r in self.reservations.items() if now > r.get("expire_at", 0)]
+        for s in expired:
+            del self.reservations[s]
+            print(f"[RESERVATION] Slot {s} reservation expired and released.")
+
+    def reserve_slot(self, slot_id: str, tx_id: str, qr: str, duration: float = 60.0) -> bool:
+        """Temporarily reserves a vacant slot for an active transaction."""
+        self.cleanup_expired_reservations()
+        if not self.is_camera_healthy():
+            return False
+        if self.occupancy_status.get(slot_id, True):
+            return False  # Slot physically occupied
+        if slot_id in self.reservations:
+            if self.reservations[slot_id].get("tx_id") == tx_id:
+                return True  # Idempotent re-reservation
+            return False  # Reserved by another transaction
+
+        now = time.time()
+        self.reservations[slot_id] = {
+            "tx_id": tx_id,
+            "qr": qr,
+            "timestamp": now,
+            "expire_at": now + duration
+        }
+        print(f"[RESERVATION] Slot {slot_id} reserved for TX {tx_id} ({duration}s).")
+        return True
+
+    def release_reservation(self, slot_id: str = None, tx_id: str = None):
+        """Releases a slot reservation by slot_id or tx_id."""
+        if slot_id and slot_id in self.reservations:
+            del self.reservations[slot_id]
+        if tx_id:
+            to_del = [s for s, r in self.reservations.items() if r.get("tx_id") == tx_id]
+            for s in to_del:
+                del self.reservations[s]
+
+    def calibrate_baseline(self, frame=None):
+        """Captures the baseline appearance of empty parking slots."""
+        if frame is None and self.use_live_webcam and self.cap and self.cap.isOpened():
+            ret, cap_frame = self.cap.read()
+            if ret and cap_frame is not None:
+                frame = cap_frame
+
+        if frame is None:
+            frame = np.zeros((520, 600, 3), dtype=np.uint8)
+            frame[:] = (15, 23, 42)
+
+        frame = cv2.resize(frame, (600, 520))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        for slot_id, data in self.slots.items():
+            x, y, w, h = data["bbox"]
+            if y + h <= blur.shape[0] and x + w <= blur.shape[1]:
+                self.baseline_rois[slot_id] = blur[y:y+h, x:x+w].copy()
+                self.occupancy_status[slot_id] = False
+
+        print(f"[CALIBRATION] Baseline empty slot reference saved for slots: {list(self.slots.keys())}")
+        return True
+
+    def auto_reconnect(self) -> bool:
+        """Attempts background reconnect with exponential backoff on repeated read failures."""
+        now = time.monotonic()
+        backoff = min(10.0, 1.0 * (2 ** min(self.reconnect_attempts, 4)))
+        if now - self.last_reconnect_time < backoff:
+            return False
+        self.last_reconnect_time = now
+        self.reconnect_attempts += 1
+        print(f"[RECONNECT] Background camera reconnect attempt {self.reconnect_attempts} (backoff={backoff}s)...")
+        return self.init_camera()
+
     def init_camera(self):
-        """Try to open the webcam. Fast path: DirectShow on index 0 (Windows)."""
+        """Try to open the webcam. Configurable via CAMERA_INDEX env var."""
+        import os
         if self.cap and self.cap.isOpened():
             self.cap.release()
 
-        # Try the fastest combination first, then fallback
+        target_idx = int(os.environ.get("CAMERA_INDEX", 0))
         attempts = [
-            (0, cv2.CAP_DSHOW),
-            (0, cv2.CAP_MSMF),
-            (0, cv2.CAP_ANY),
-            (1, cv2.CAP_DSHOW),
-            (1, cv2.CAP_ANY),
+            (target_idx, cv2.CAP_DSHOW),
+            (target_idx, cv2.CAP_MSMF),
+            (target_idx, cv2.CAP_ANY),
         ]
 
         for idx, backend in attempts:
@@ -86,7 +207,13 @@ class RealtimeParkingTracker:
                         self.cap = cap
                         self.use_live_webcam = True
                         self.active_camera_index = idx
-                        print(f'[SUCCESS] Live Camera Connected on Device {idx}.')
+                        now = time.monotonic()
+                        self.last_frame_timestamp = now
+                        self.last_detection_timestamp = now
+                        self.consecutive_failures = 0
+                        self.reconnect_attempts = 0
+                        self.active_backend_name = "CAP_DSHOW" if backend == cv2.CAP_DSHOW else ("CAP_MSMF" if backend == cv2.CAP_MSMF else "CAP_ANY")
+                        print(f'[SUCCESS] Live Camera Connected on Device {idx} ({self.active_backend_name}).')
                         return True
                 if cap:
                     cap.release()
@@ -106,32 +233,44 @@ class RealtimeParkingTracker:
         print("[INFO] Camera capture stopped cleanly.")
         return True
 
-    # PART 2 & PART 4: Process Camera Frame & Compute ROI Density
+    # PART 2 & PART 4: Process Camera Frame & Compute ROI Occupancy
     def process_camera_frame(self, frame, threshold_pixels=1600):
         if frame is None:
             return self.occupancy_status
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                       cv2.THRESH_BINARY_INV, 25, 16)
+        edges = cv2.Canny(blur, 40, 120)
         fg_mask = self.bg_subtractor.apply(blur)
 
         for slot_id, data in self.slots.items():
             x, y, w, h = data["bbox"]
-            if y + h <= thresh.shape[0] and x + w <= thresh.shape[1]:
-                roi_thresh = thresh[y:y+h, x:x+w]
+            if y + h <= blur.shape[0] and x + w <= blur.shape[1]:
+                roi_blur = blur[y:y+h, x:x+w]
+                roi_edges = edges[y:y+h, x:x+w]
                 roi_fg = fg_mask[y:y+h, x:x+w]
-                
-                pixel_count = cv2.countNonZero(roi_thresh)
+
+                edge_count = cv2.countNonZero(roi_edges)
                 motion_count = cv2.countNonZero(roi_fg)
-                
-                total_density = pixel_count + (motion_count * 2)
+                total_density = edge_count + (motion_count * 2)
                 self.roi_pixel_counts[slot_id] = total_density
 
-                if self.use_live_webcam:
-                    self.occupancy_status[slot_id] = (total_density > threshold_pixels)
+                if slot_id in self.baseline_rois:
+                    base_roi = self.baseline_rois[slot_id]
+                    diff = cv2.absdiff(roi_blur, base_roi)
+                    diff_count = cv2.countNonZero(diff > 35)
+                    mean_diff = float(np.mean(diff))
 
+                    # Occupied if significant change from baseline empty state
+                    is_occupied = (diff_count > 1850) or (mean_diff > 20.0) or (motion_count > 1500)
+                else:
+                    is_occupied = (edge_count > 1500) or (motion_count > 1500)
+
+                # Update live occupancy status
+                if self.use_live_webcam:
+                    self.occupancy_status[slot_id] = is_occupied
+
+        self.last_detection_timestamp = time.monotonic()
         return self.occupancy_status
 
     # PART 4: Calculate Local Spatial Congestion
@@ -148,24 +287,54 @@ class RealtimeParkingTracker:
 
         return occupied_count, level
 
-    # Live slot data payload — feeds distance + status + congestion to the scoring module
+    # Live slot data payload — feeds distance + status + congestion
     def get_live_slot_feed(self) -> dict:
-        """Returns real-time data for all slots. Used by /api/slots endpoint."""
+        """Returns real-time data for all slots with 4 states (VACANT, OCCUPIED, RESERVED, UNKNOWN)."""
+        self.cleanup_expired_reservations()
+        healthy = self.is_camera_healthy()
         feed = {}
+
         for slot_id, data in self.slots.items():
             is_occ = self.occupancy_status[slot_id]
+            is_res = slot_id in self.reservations
+
+            if not healthy:
+                status = "UNKNOWN"
+                vacant = False
+                reserved = False
+                unknown = True
+            elif is_res:
+                status = "RESERVED"
+                vacant = False
+                reserved = True
+                unknown = False
+            elif is_occ:
+                status = "OCCUPIED"
+                vacant = False
+                reserved = False
+                unknown = False
+            else:
+                status = "VACANT"
+                vacant = True
+                reserved = False
+                unknown = False
+
             cg_count, cg_level = self.calculate_congestion(slot_id)
 
             feed[slot_id] = {
                 "slot_id": slot_id,
                 "distance": data["distance"],
-                "status": "OCCUPIED" if is_occ else "VACANT",
-                "vacant": not is_occ,
+                "status": status,
+                "vacant": vacant,
+                "reserved": reserved,
+                "unknown": unknown,
                 "congestion": cg_count,
                 "congestion_level": cg_level,
                 "pixel_density": self.roi_pixel_counts.get(slot_id, 0),
-                "camera_active": self.use_live_webcam,
-                "camera_index": self.active_camera_index
+                "camera_active": healthy,
+                "camera_index": self.active_camera_index,
+                "last_frame_timestamp": self.last_frame_timestamp,
+                "detection_fresh": healthy
             }
 
         return feed
@@ -191,17 +360,21 @@ class RealtimeParkingTracker:
         print("------------------------------------------\n")
 
     def capture_next_frame(self):
-        """Always returns a valid numpy frame (live webcam or synthetic canvas)."""
+        """Always returns a valid numpy frame (live webcam or synthetic canvas). Updates last_frame_timestamp on every read."""
         if self.use_live_webcam and self.cap and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret and frame is not None:
+                self.last_frame_timestamp = time.monotonic()
+                self.consecutive_failures = 0
+                self.reconnect_attempts = 0
                 frame = cv2.resize(frame, (600, 520))
                 self.process_camera_frame(frame)
                 return self.draw_overlays(frame, is_live=True)
             else:
-                # Frame grab failed — mark camera as disconnected
-                print('[WARN] Camera frame read failed, switching to synthetic view.')
-                self.use_live_webcam = False
+                self.consecutive_failures += 1
+                print(f"[WARN] Camera read failure ({self.consecutive_failures}).")
+                if self.consecutive_failures >= 3:
+                    self.auto_reconnect()
 
         # Synthetic dark canvas fallback
         frame = np.zeros((520, 600, 3), dtype=np.uint8)

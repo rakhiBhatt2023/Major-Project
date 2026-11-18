@@ -215,6 +215,8 @@ body {
 
 .slot-btn.vacant   { background: var(--green-bg); border-color: var(--green); color: #065f46; }
 .slot-btn.occupied { background: var(--red-bg);   border-color: var(--red);   color: #991b1b; }
+.slot-btn.reserved { background: var(--blue-bg);  border-color: var(--blue);  color: #1e40af; }
+.slot-btn.unknown  { background: var(--amber-bg); border-color: var(--amber); color: #92400e; }
 
 .slot-btn .sn { font-size: 16px; font-weight: 700; }
 .slot-btn .sd { font-size: 12px; opacity: 0.8; }
@@ -256,6 +258,8 @@ body {
 
 .tag-v { background: var(--green-bg); color: #065f46; }
 .tag-o { background: var(--red-bg);   color: #991b1b; }
+.tag-r { background: var(--blue-bg);  color: #1e40af; }
+.tag-u { background: var(--amber-bg); color: #92400e; }
 
 .cong-low    { background: var(--green-bg); color: #065f46; }
 .cong-medium { background: var(--amber-bg); color: #92400e; }

@@ -1,11 +1,16 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Green Parking Optimization System — Objective 2 &amp; 3</title>
+
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
+
 <body>
 
   <div class="container">
@@ -14,70 +19,143 @@
     <header class="header-box">
       <div class="header-title">
         <h1>Real-Time Slot Distance &amp; Local Congestion Tracker</h1>
-        <p class="header-sub">Live Camera Occupancy Detection · Fixed Gate Distance Mapping · Local Congestion Calculation</p>
+
+        <p class="header-sub">
+          Live Camera Occupancy Detection · Fixed Gate Distance Mapping · Local Congestion Calculation
+        </p>
       </div>
+
       <div class="header-pill" id="cam-pill">
         <span class="pill-dot" id="pill-dot"></span>
         <span id="pill-label">Camera Connecting</span>
       </div>
     </header>
 
-    <!-- OBJECTIVE 3: AIR QUALITY ALERT BANNER (shows only on WARNING / HARMFUL) -->
-    <div id="aq-banner" style="display:none; padding:12px 16px; margin:12px 0; font-weight:bold; border-radius:8px;"></div>
+
+    <!-- OBJECTIVE 3: AIR QUALITY ALERT BANNER -->
+    <div
+      id="aq-banner"
+      style="display:none; padding:12px 16px; margin:12px 0; font-weight:bold; border-radius:8px;">
+    </div>
+
 
     <!-- ── KPI METRIC CARDS ──────────────────── -->
     <div class="kpi-row">
+
       <div class="kpi-card">
         <span class="kpi-label">Total Parking Slots</span>
-        <span class="kpi-val" id="val-total">9</span>
+        <span class="kpi-val" id="val-total">4</span>
       </div>
+
       <div class="kpi-card kpi-green">
         <span class="kpi-label">Vacant Slots</span>
         <span class="kpi-val" id="val-vacant">--</span>
       </div>
+
       <div class="kpi-card kpi-red">
         <span class="kpi-label">Occupied Slots</span>
         <span class="kpi-val" id="val-occupied">--</span>
       </div>
+
       <div class="kpi-card kpi-blue">
         <span class="kpi-label">Avg Local Congestion</span>
         <span class="kpi-val" id="val-congestion">--</span>
       </div>
+
     </div>
+
 
     <!-- ── DUAL PANEL LAYOUT ─────────────────── -->
     <div class="two-col">
 
-      <!-- LEFT PANEL: Camera & Manual Controls -->
+
+      <!-- LEFT PANEL: CAMERA & MANUAL CONTROLS -->
       <div class="panel">
+
         <div class="panel-head">
           <h2>Live Camera Detection Feed</h2>
           <span class="panel-tag">Live Camera Feed</span>
         </div>
 
+
+        <!-- CAMERA CONTROLS -->
         <div class="cam-controls">
-          <button id="btn-cam-on"  class="cam-btn cam-on"  onclick="startCamera()">Start Live Camera</button>
-          <button id="btn-cam-off" class="cam-btn cam-off" onclick="stopCamera()">Stop Camera</button>
+
+          <button
+            id="btn-cam-on"
+            class="cam-btn cam-on"
+            onclick="startCamera()">
+            Start Live Camera
+          </button>
+
+          <button
+            id="btn-cam-off"
+            class="cam-btn cam-off"
+            onclick="stopCamera()">
+            Stop Camera
+          </button>
+
+          <button
+            id="btn-cam-calib"
+            class="cam-btn"
+            style="background:#0284c7; color:#fff;"
+            onclick="calibrateSlots()">
+            Calibrate Empty Slots
+          </button>
+
         </div>
 
+
+        <!-- CAMERA DISPLAY -->
         <div class="video-wrap">
-          <canvas id="cam-canvas" width="600" height="520"></canvas>
+
+          <img
+            id="cam-image"
+            width="600"
+            height="520"
+            style="
+              display:block;
+              width:600px;
+              height:520px;
+              object-fit:cover;
+              background:#000;
+            "
+            alt="Live Camera Feed">
+
         </div>
 
+
+        <!-- MANUAL SLOT SIMULATOR -->
         <div class="sim-box">
-          <div class="sim-title">Manual Slot Occupancy Simulator <span class="sim-hint">(Click slot to toggle vacant/occupied)</span></div>
-          <div class="slots-grid" id="slots-grid"></div>
+
+          <div class="sim-title">
+            Manual Slot Occupancy Simulator
+            <span class="sim-hint">
+              (Click slot to toggle vacant/occupied)
+            </span>
+          </div>
+
+          <div
+            class="slots-grid"
+            id="slots-grid">
+          </div>
+
         </div>
+
       </div>
 
-      <!-- RIGHT PANEL: Data Table & API Feed -->
+
+      <!-- RIGHT PANEL: DATA TABLE & API FEED -->
       <div class="panel">
+
         <div class="panel-head">
           <h2>Distance &amp; Congestion Metrics</h2>
           <span class="panel-tag">Real-Time Sync</span>
         </div>
 
+
         <table class="data-table">
+
           <thead>
             <tr>
               <th>Slot ID</th>
@@ -87,35 +165,80 @@
               <th>Congestion Level</th>
             </tr>
           </thead>
+
           <tbody id="table-body"></tbody>
+
         </table>
 
+
+        <!-- TEST PRESETS -->
         <div class="preset-box">
-          <span class="preset-label">Test Scenarios:</span>
+
+          <span class="preset-label">
+            Test Scenarios:
+          </span>
+
           <div class="preset-btns">
-            <button onclick="applyPreset('test1')" class="preset-btn">Test 1: Low Congestion</button>
-            <button onclick="applyPreset('test2')" class="preset-btn">Test 2: High Congestion</button>
-            <button onclick="applyPreset('reset')" class="preset-btn">Reset Defaults</button>
+
+            <button
+              onclick="applyPreset('test1')"
+              class="preset-btn">
+              Test 1: Low Congestion
+            </button>
+
+            <button
+              onclick="applyPreset('test2')"
+              class="preset-btn">
+              Test 2: High Congestion
+            </button>
+
+            <button
+              onclick="applyPreset('reset')"
+              class="preset-btn">
+              Reset Defaults
+            </button>
+
           </div>
+
         </div>
 
+
+        <!-- LIVE API JSON -->
         <div class="json-box">
-          <div class="json-label">Live API Data Feed Payload (/api/slots)</div>
+
+          <div class="json-label">
+            Live API Data Feed Payload (/api/slots)
+          </div>
+
           <pre id="json-pre"></pre>
+
         </div>
+
       </div>
 
     </div>
 
-    <!-- OBJECTIVE 3: AIR QUALITY MONITOR PANEL -->
-    <div class="panel" style="margin-top:20px;">
+
+    <!-- OBJECTIVE 3: AIR QUALITY MONITOR -->
+    <div
+      class="panel"
+      style="margin-top:20px;">
+
       <div class="panel-head">
+
         <h2>Air Quality Monitor (MQ-135)</h2>
-        <span class="panel-tag">Sensor Live Feed</span>
+
+        <span class="panel-tag">
+          Sensor Live Feed
+        </span>
+
       </div>
 
+
       <table class="data-table">
+
         <thead>
+
           <tr>
             <th>Alert Status</th>
             <th>Raw Sensor Value</th>
@@ -123,235 +246,868 @@
             <th>Message</th>
             <th>Last Updated</th>
           </tr>
+
         </thead>
+
+
         <tbody>
+
           <tr>
-            <td><strong id="aq-level">No data yet</strong></td>
-            <td id="aq-raw">--</td>
-            <td id="aq-exceed">--</td>
-            <td id="aq-msg">--</td>
-            <td id="aq-time">--</td>
+
+            <td>
+              <strong id="aq-level">
+                No data yet
+              </strong>
+            </td>
+
+            <td id="aq-raw">
+              --
+            </td>
+
+            <td id="aq-exceed">
+              --
+            </td>
+
+            <td id="aq-msg">
+              --
+            </td>
+
+            <td id="aq-time">
+              --
+            </td>
+
           </tr>
+
         </tbody>
+
       </table>
 
-      <p id="aq-summary" style="margin-top:12px;">Summary: --</p>
-      <p style="font-size:12px; color:gray; margin-top:6px;">
-        Note: thresholds (300 / 400) are placeholder values for testing, not calibrated ppm limits.
+
+      <p
+        id="aq-summary"
+        style="margin-top:12px;">
+        Summary: --
       </p>
+
+
+      <p
+        style="font-size:12px; color:gray; margin-top:6px;">
+
+        Note: thresholds (300 / 400) are placeholder values for testing,
+        not calibrated ppm limits.
+
+      </p>
+
     </div>
+
+
+    <!-- GATE PANEL -->
+    {% include 'gate_panel.html' %}
 
   </div>
 
+
 <script>
+
+  /* ============================================================
+     GLOBAL SETTINGS
+     ============================================================ */
+
   const STORAGE_KEY = 'parking_slots_v2';
 
+
+  /* ============================================================
+     PARKING DATA
+     ============================================================ */
+
   async function fetchData() {
+
     try {
-      const res  = await fetch('/api/slots');
+
+      const res = await fetch(
+        '/api/slots?t=' + Date.now(),
+        {
+          cache: 'no-store'
+        }
+      );
+
       const data = await res.json();
+
       updateUI(data);
-    } catch(e) {}
+
+    } catch (e) {
+
+      console.error('Parking API error:', e);
+
+    }
+
   }
+
+
+  /* ============================================================
+     CAMERA
+     ============================================================ */
 
   let frameInterval = null;
-  const canvas  = document.getElementById('cam-canvas');
-  const ctx     = canvas.getContext('2d');
+
+  const camImage =
+    document.getElementById('cam-image');
+
 
   function startFrameLoop() {
-    if (frameInterval) return;
-    frameInterval = setInterval(grabFrame, 100);
+
+    if (frameInterval) {
+      return;
+    }
+
+    /*
+     * Immediately request one frame instead of waiting
+     * for the first 100 ms interval.
+     */
+    grabFrame();
+
+    frameInterval =
+      setInterval(grabFrame, 100);
+
   }
+
 
   function stopFrameLoop() {
-    if (frameInterval) { clearInterval(frameInterval); frameInterval = null; }
+
+    if (frameInterval) {
+
+      clearInterval(frameInterval);
+
+      frameInterval = null;
+
+    }
+
   }
+
 
   function grabFrame() {
-    const fr  = new Image();
-    fr.onload = () => {
-      ctx.drawImage(fr, 0, 0, canvas.width, canvas.height);
-    };
-    fr.src = '/api/frame?t=' + Date.now();
+
+    if (!camImage) {
+      console.error('Camera image element not found.');
+      return;
+    }
+
+    /*
+     * Directly display the JPEG returned by Flask.
+     *
+     * No canvas.
+     * No Image() object.
+     * No drawImage().
+     */
+    camImage.src =
+      '/api/frame?t=' + Date.now();
+
   }
+
 
   async function startCamera() {
-    await fetch('/api/camera/reconnect', { method: 'POST' });
+
+    try {
+
+      const res =
+        await fetch(
+          '/api/camera/reconnect',
+          {
+            method: 'POST'
+          }
+        );
+
+      if (!res.ok) {
+        console.error(
+          'Camera reconnect failed:',
+          res.status
+        );
+      }
+
+    } catch (e) {
+
+      console.error(
+        'Camera reconnect error:',
+        e
+      );
+
+    }
+
     startFrameLoop();
+
     fetchData();
+
   }
+
 
   async function stopCamera() {
-    await fetch('/api/camera/stop', { method: 'POST' });
+
+    try {
+
+      await fetch(
+        '/api/camera/stop',
+        {
+          method: 'POST'
+        }
+      );
+
+    } catch (e) {
+
+      console.error(
+        'Camera stop error:',
+        e
+      );
+
+    }
+
     stopFrameLoop();
+
     fetchData();
+
   }
 
-  document.addEventListener('keydown', e => {
-    if (['q','s','escape'].includes(e.key.toLowerCase())) stopCamera();
-  });
+
+  /* ============================================================
+     KEYBOARD CONTROLS
+     ============================================================ */
+
+  document.addEventListener(
+    'keydown',
+    e => {
+
+      if (
+        ['q', 's', 'escape']
+          .includes(e.key.toLowerCase())
+      ) {
+
+        stopCamera();
+
+      }
+
+    }
+  );
+
+
+  /* ============================================================
+     MANUAL SLOT TOGGLE
+     ============================================================ */
 
   async function toggleSlot(slotId) {
-    const res    = await fetch('/api/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slot_id: slotId })
-    });
-    const result = await res.json();
-    if (result.data) saveLocal(Object.values(result.data).filter(s => s.slot_id));
-    fetchData();
+
+    try {
+
+      const res =
+        await fetch(
+          '/api/toggle',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+
+            body: JSON.stringify({
+              slot_id: slotId
+            })
+
+          }
+        );
+
+
+      const result =
+        await res.json();
+
+
+      if (result.data) {
+
+        saveLocal(
+          Object
+            .values(result.data)
+            .filter(s => s.slot_id)
+        );
+
+      }
+
+
+      fetchData();
+
+    } catch (e) {
+
+      console.error(
+        'Toggle slot error:',
+        e
+      );
+
+    }
+
   }
+
+
+  /* ============================================================
+     PRESETS
+     ============================================================ */
 
   async function applyPreset(id) {
-    const res    = await fetch(`/api/preset/${id}`, { method: 'POST' });
-    const result = await res.json();
-    if (result.data) saveLocal(Object.values(result.data).filter(s => s.slot_id));
-    fetchData();
+
+    try {
+
+      const res =
+        await fetch(
+          `/api/preset/${id}`,
+          {
+            method: 'POST'
+          }
+        );
+
+
+      const result =
+        await res.json();
+
+
+      if (result.data) {
+
+        saveLocal(
+          Object
+            .values(result.data)
+            .filter(s => s.slot_id)
+        );
+
+      }
+
+
+      fetchData();
+
+    } catch (e) {
+
+      console.error(
+        'Preset error:',
+        e
+      );
+
+    }
+
   }
+
+
+  /* ============================================================
+     LOCAL STORAGE
+     ============================================================ */
 
   function saveLocal(slots) {
+
     const occ = {};
-    slots.forEach(s => { occ[s.slot_id] = !s.vacant; });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(occ));
+
+    slots.forEach(s => {
+
+      occ[s.slot_id] =
+        !s.vacant;
+
+    });
+
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(occ)
+    );
+
   }
 
-  async function initLocalStorage() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        await fetch('/api/sync_state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ occupancy: JSON.parse(saved) })
-        });
-      } catch(e) {}
+
+  async function calibrateSlots() {
+    try {
+      const res = await fetch('/api/camera/calibrate', { method: 'POST' });
+      const data = await res.json();
+      console.log('Calibrate response:', data);
+      fetchData();
+    } catch (e) {
+      console.error('Calibration error:', e);
     }
+  }
+
+
+  async function initLocalStorage() {
     fetchData();
   }
 
+
+  /* ============================================================
+     UPDATE DASHBOARD UI
+     ============================================================ */
+
   function updateUI(feed) {
+
     delete feed._optimal;
 
-    const slots    = Object.values(feed);
-    const vacant   = slots.filter(s => s.vacant).length;
-    const occupied = slots.length - vacant;
-    const avgCong  = (slots.reduce((a,s) => a + s.congestion, 0) / slots.length).toFixed(1);
-    const camActive = (slots[0] || {}).camera_active;
 
-    /* Pill status */
-    const pill     = document.getElementById('cam-pill');
-    const pillDot  = document.getElementById('pill-dot');
-    const pillLbl  = document.getElementById('pill-label');
-    if (camActive) {
-      pill.className    = 'header-pill pill-online';
-      pillDot.style.background = '#10b981';
-      pillLbl.textContent = 'Camera Live';
-    } else {
-      pill.className    = 'header-pill pill-offline';
-      pillDot.style.background = '#ef4444';
-      pillLbl.textContent = 'Camera Stopped';
+    const slots =
+      Object.values(feed);
+
+
+    if (!slots.length) {
+      return;
     }
+
+
+    const vacant =
+      slots.filter(
+        s => s.vacant
+      ).length;
+
+
+    const occupied =
+      slots.length - vacant;
+
+
+    const avgCong =
+      (
+        slots.reduce(
+          (a, s) =>
+            a + s.congestion,
+          0
+        ) / slots.length
+      ).toFixed(1);
+
+
+    const camActive =
+      (slots[0] || {})
+        .camera_active;
+
+
+    /* Camera status pill */
+
+    const pill =
+      document.getElementById(
+        'cam-pill'
+      );
+
+    const pillDot =
+      document.getElementById(
+        'pill-dot'
+      );
+
+    const pillLbl =
+      document.getElementById(
+        'pill-label'
+      );
+
+
+    if (camActive) {
+
+      pill.className =
+        'header-pill pill-online';
+
+      pillDot.style.background =
+        '#10b981';
+
+      pillLbl.textContent =
+        'Camera Live';
+
+    } else {
+
+      pill.className =
+        'header-pill pill-offline';
+
+      pillDot.style.background =
+        '#ef4444';
+
+      pillLbl.textContent =
+        'Camera Stopped';
+
+    }
+
 
     /* KPI */
-    document.getElementById('val-total').textContent     = slots.length;
-    document.getElementById('val-vacant').textContent    = vacant;
-    document.getElementById('val-occupied').textContent  = occupied;
-    document.getElementById('val-congestion').textContent = avgCong;
 
-    /* Slot Grid */
-    const grid = document.getElementById('slots-grid');
-    grid.innerHTML = slots.map(s => {
-      const cls = s.vacant ? 'slot-btn vacant' : 'slot-btn occupied';
-      return `<button class="${cls}" onclick="toggleSlot('${s.slot_id}')">
-        <span class="sn">${s.slot_id}</span>
-        <span class="sd">${s.distance}m</span>
-        <span class="ss">${s.status}</span>
-      </button>`;
-    }).join('');
+    document.getElementById(
+      'val-total'
+    ).textContent =
+      slots.length;
 
-    /* Data Table */
-    document.getElementById('table-body').innerHTML = slots.map(s => {
-      return `<tr>
-        <td><strong>Slot ${s.slot_id}</strong></td>
-        <td>${s.distance} m</td>
-        <td><span class="tag ${s.vacant ? 'tag-v' : 'tag-o'}">${s.status}</span></td>
-        <td>${s.congestion} cars</td>
-        <td><span class="cong cong-${s.congestion_level.toLowerCase()}">${s.congestion_level}</span></td>
-      </tr>`;
-    }).join('');
 
-    /* JSON Preview */
-    document.getElementById('json-pre').textContent =
-      JSON.stringify(feed, null, 2);
+    document.getElementById(
+      'val-vacant'
+    ).textContent =
+      vacant;
+
+
+    document.getElementById(
+      'val-occupied'
+    ).textContent =
+      occupied;
+
+
+    document.getElementById(
+      'val-congestion'
+    ).textContent =
+      avgCong;
+
+
+    /* Slot grid */
+
+    const grid =
+      document.getElementById(
+        'slots-grid'
+      );
+
+
+    grid.innerHTML =
+      slots.map(s => {
+
+        let cls = 'slot-btn vacant';
+        if (s.status === 'OCCUPIED') cls = 'slot-btn occupied';
+        else if (s.status === 'RESERVED') cls = 'slot-btn reserved';
+        else if (s.status === 'UNKNOWN') cls = 'slot-btn unknown';
+
+        return `
+          <button
+            class="${cls}"
+            onclick="toggleSlot('${s.slot_id}')">
+
+            <span class="sn">
+              ${s.slot_id}
+            </span>
+
+            <span class="sd">
+              ${s.distance}m
+            </span>
+
+            <span class="ss">
+              ${s.status}
+            </span>
+
+          </button>
+        `;
+
+      }).join('');
+
+
+    /* Data table */
+
+    document.getElementById(
+      'table-body'
+    ).innerHTML =
+
+      slots.map(s => {
+
+        let tagCls = 'tag-v';
+        if (s.status === 'OCCUPIED') tagCls = 'tag-o';
+        else if (s.status === 'RESERVED') tagCls = 'tag-r';
+        else if (s.status === 'UNKNOWN') tagCls = 'tag-u';
+
+        return `
+          <tr>
+
+            <td>
+              <strong>
+                Slot ${s.slot_id}
+              </strong>
+            </td>
+
+            <td>
+              ${s.distance} m
+            </td>
+
+            <td>
+              <span
+                class="tag ${tagCls}">
+
+                ${s.status}
+
+              </span>
+            </td>
+
+            <td>
+              ${s.congestion} cars
+            </td>
+
+            <td>
+
+              <span
+                class="cong cong-${s.congestion_level.toLowerCase()}">
+
+                ${s.congestion_level}
+
+              </span>
+
+            </td>
+
+          </tr>
+        `;
+
+      }).join('');
+
+
+    /* JSON preview */
+
+    document.getElementById(
+      'json-pre'
+    ).textContent =
+      JSON.stringify(
+        feed,
+        null,
+        2
+      );
+
   }
 
-  /* ───────────────────────────────────────────────────────────────
-     OBJECTIVE 3 — AIR QUALITY (MQ-135) LIVE UPDATE
-     ─────────────────────────────────────────────────────────────── */
+
+  /* ============================================================
+     AIR QUALITY
+     ============================================================ */
+
   const AQ_COLORS = {
-    SAFE:    { bg: '#d4edda', fg: '#155724' },
-    WARNING: { bg: '#fff3cd', fg: '#856404' },
-    HARMFUL: { bg: '#f8d7da', fg: '#721c24' }
-  };
 
-  function aqSet(id, value) {
-    document.getElementById(id).textContent = value;
-  }
+    SAFE: {
+      bg: '#d4edda',
+      fg: '#155724'
+    },
 
-  async function fetchAirQuality() {
-    const banner = document.getElementById('aq-banner');
+    WARNING: {
+      bg: '#fff3cd',
+      fg: '#856404'
+    },
 
-    try {
-      const res = await fetch('/api/air-quality/latest');
-      const out = await res.json();
-
-      if (!out.success) {
-        aqSet('aq-level', 'No data yet');
-        banner.style.display = 'none';
-      } else {
-        const d = out.data;
-        const c = AQ_COLORS[d.alert_level] || AQ_COLORS.SAFE;
-
-        aqSet('aq-level', d.alert_level);
-        aqSet('aq-raw', d.raw_value);
-        aqSet('aq-exceed', d.exceedance ? 'YES' : 'NO');
-        aqSet('aq-msg', d.message || '');
-        aqSet('aq-time', d.timestamp);
-        document.getElementById('aq-level').style.color = c.fg;
-
-        if (d.alert_level === 'WARNING' || d.alert_level === 'HARMFUL') {
-          banner.style.display = 'block';
-          banner.style.background = c.bg;
-          banner.style.color = c.fg;
-          banner.textContent = 'AIR QUALITY ALERT: ' + d.alert_level +
-                               ' (raw value ' + d.raw_value + ')';
-        } else {
-          banner.style.display = 'none';
-        }
-      }
-    } catch (e) {
-      aqSet('aq-level', 'API not reachable');
+    HARMFUL: {
+      bg: '#f8d7da',
+      fg: '#721c24'
     }
 
-    try {
-      const res2 = await fetch('/api/air-quality/summary');
-      const out2 = await res2.json();
-      if (out2.success) {
-        const s = out2.data;
-        aqSet('aq-summary',
-          'Summary: ' + s.total_readings + ' readings | SAFE ' + s.safe_count +
-          ' | WARNING ' + s.warning_count + ' | HARMFUL ' + s.harmful_count +
-          ' | Exceedance rate ' + s.exceedance_rate + '%');
-      }
-    } catch (e) {}
+  };
+
+
+  function aqSet(id, value) {
+
+    const element =
+      document.getElementById(id);
+
+
+    if (element) {
+
+      element.textContent =
+        value;
+
+    }
+
   }
 
+
+  async function fetchAirQuality() {
+
+    const banner =
+      document.getElementById(
+        'aq-banner'
+      );
+
+
+    try {
+
+      const res =
+        await fetch(
+          '/api/air-quality/latest?t=' +
+          Date.now(),
+          {
+            cache: 'no-store'
+          }
+        );
+
+
+      const out =
+        await res.json();
+
+
+      if (!out.success) {
+
+        aqSet(
+          'aq-level',
+          'No data yet'
+        );
+
+        banner.style.display =
+          'none';
+
+      } else {
+
+        const d =
+          out.data;
+
+
+        const c =
+          AQ_COLORS[d.alert_level]
+          || AQ_COLORS.SAFE;
+
+
+        aqSet(
+          'aq-level',
+          d.alert_level
+        );
+
+        aqSet(
+          'aq-raw',
+          d.raw_value
+        );
+
+        aqSet(
+          'aq-exceed',
+          d.exceedance
+            ? 'YES'
+            : 'NO'
+        );
+
+        aqSet(
+          'aq-msg',
+          d.message || ''
+        );
+
+        aqSet(
+          'aq-time',
+          d.timestamp
+        );
+
+
+        document.getElementById(
+          'aq-level'
+        ).style.color =
+          c.fg;
+
+
+        if (
+          d.alert_level ===
+            'WARNING'
+          ||
+          d.alert_level ===
+            'HARMFUL'
+        ) {
+
+          banner.style.display =
+            'block';
+
+          banner.style.background =
+            c.bg;
+
+          banner.style.color =
+            c.fg;
+
+          banner.textContent =
+            'AIR QUALITY ALERT: ' +
+            d.alert_level +
+            ' (raw value ' +
+            d.raw_value +
+            ')';
+
+        } else {
+
+          banner.style.display =
+            'none';
+
+        }
+
+      }
+
+    } catch (e) {
+
+      aqSet(
+        'aq-level',
+        'API not reachable'
+      );
+
+      console.error(
+        'Air quality latest error:',
+        e
+      );
+
+    }
+
+
+    try {
+
+      const res2 =
+        await fetch(
+          '/api/air-quality/summary?t=' +
+          Date.now(),
+          {
+            cache: 'no-store'
+          }
+        );
+
+
+      const out2 =
+        await res2.json();
+
+
+      if (out2.success) {
+
+        const s =
+          out2.data;
+
+
+        aqSet(
+          'aq-summary',
+
+          'Summary: ' +
+          s.total_readings +
+          ' readings | SAFE ' +
+          s.safe_count +
+          ' | WARNING ' +
+          s.warning_count +
+          ' | HARMFUL ' +
+          s.harmful_count +
+          ' | Exceedance rate ' +
+          s.exceedance_rate +
+          '%'
+        );
+
+      }
+
+    } catch (e) {
+
+      console.error(
+        'Air quality summary error:',
+        e
+      );
+
+    }
+
+  }
+
+
+  /* ============================================================
+     INITIALIZATION
+     ============================================================ */
+
+  /*
+   * Start camera display immediately.
+   *
+   * The Flask backend already owns camera 0.
+   * We only request the JPEG frame here.
+   */
   startFrameLoop();
-  setInterval(fetchData, 2000);
+
+
+  /* Parking data refresh */
+
+  setInterval(
+    fetchData,
+    2000
+  );
+
+
+  /* Restore saved slot state */
+
   initLocalStorage();
 
+
+  /* Air quality */
+
   fetchAirQuality();
-  setInterval(fetchAirQuality, 3000);   // refresh every 3 seconds
+
+
+  setInterval(
+    fetchAirQuality,
+    3000
+  );
+
 </script>
+
 </body>
 </html>

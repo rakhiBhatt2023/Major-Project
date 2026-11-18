@@ -23,10 +23,10 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 # CONFIG — normalization bounds and weights
 # ---------------------------------------------------------------------------
-# Based on Shubam's fixed distance map (5.0m - 15.0m) and adjacency network
-# (max neighbor count per slot in the current layout is 4, e.g. B2).
-MAX_DISTANCE = 15.0
-MAX_CONGESTION = 4
+# Based on Shubam's fixed distance map (5.0m - 10.0m) and adjacency network
+# (max neighbor count per slot in the 4-slot 2x2 layout is 2).
+MAX_DISTANCE = 10.0
+MAX_CONGESTION = 2
  
 # Weight split between distance and congestion (must sum to 1.0).
 # Distance weighted slightly higher: a nearby-but-busy slot is still often

@@ -1,4 +1,13 @@
 
+"""
+===============================================================================
+OBSOLETE FILE / LEGACY BACKUP
+===============================================================================
+NOTE: This file is an unused Python simulator backup file.
+Active integrated Arduino C++ firmware is: smart_park_gate_air.ino
+===============================================================================
+"""
+
 import random
 import time
 import csv

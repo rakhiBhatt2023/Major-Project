@@ -12,16 +12,20 @@ Tables:
                            schema extension, filled from Shubam's tracker.slots)
   - congestion_history  : one row per slot per poll (time-series congestion log)
   - recommendation_log  : one row per AI recommendation event (for reporting)
+  - gate_events         : one row per gate/IR event (entry, exit, denied, full)
+                           -> evidence that the minor (gate) works with the major
 
 Called from app.py — Rakhi does NOT compute scores here, only stores/reads data
 produced by Ramandeep's green_score.py and Shubam's realtime_tracker.py.
 ===============================================================================
 """
 
+import os
 import sqlite3
 from datetime import datetime
 
-DB_PATH = "smart_parking.db"
+# absolute path: the same smart_parking.db no matter where Python is started from
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smart_parking.db")
 
 
 def get_connection():
@@ -31,7 +35,7 @@ def get_connection():
 
 
 def init_db():
-    """Creates all Objective-2 tables if they don't already exist. Safe to call every startup."""
+    """Creates all tables if they don't already exist. Safe to call every startup."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -69,9 +73,47 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gate_events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            event      TEXT NOT NULL,
+            qr         TEXT,
+            slot_id    TEXT,
+            note       TEXT,
+            timestamp  TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS slot_reservations (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            slot_id      TEXT NOT NULL,
+            tx_id        TEXT NOT NULL,
+            qr           TEXT NOT NULL,
+            status       TEXT NOT NULL,
+            reserved_at  TEXT NOT NULL,
+            expires_at   TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS parking_transactions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id  TEXT NOT NULL UNIQUE,
+            qr              TEXT NOT NULL,
+            action          TEXT NOT NULL,
+            status          TEXT NOT NULL,
+            fee             REAL,
+            slot_id         TEXT,
+            timestamp       TEXT NOT NULL,
+            error_reason    TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
-    print("[DB] smart_parking.db ready — slot_coordinates, congestion_history, recommendation_log")
+    print("[DB] smart_parking.db ready — slot_coordinates, congestion_history, "
+          "recommendation_log, gate_events, slot_reservations, parking_transactions")
 
 
 def sync_slot_coordinates(slots_dict):
@@ -82,6 +124,9 @@ def sync_slot_coordinates(slots_dict):
     """
     conn = get_connection()
     cur = conn.cursor()
+    if slots_dict:
+        placeholders = ",".join("?" for _ in slots_dict)
+        cur.execute(f"DELETE FROM slot_coordinates WHERE slot_id NOT IN ({placeholders})", list(slots_dict.keys()))
     for slot_id, data in slots_dict.items():
         x, y, w, h = data["bbox"]
         cur.execute("""
@@ -152,6 +197,85 @@ def get_slot_coordinates():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM slot_coordinates ORDER BY slot_id")
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# GATE EVENTS (minor <-> major integration evidence)
+# ---------------------------------------------------------------------------
+def log_gate_event(event: str, qr: str = None, slot_id: str = None, note: str = None):
+    """
+    Appends one row to gate_events.
+    event examples: IR_ENTRY, IR_EXIT, ENTRY_GRANTED, ENTRY_DENIED_FULL,
+                    ENTRY_DENIED_PAYMENT, EXIT_GRANTED, MANUAL_OPEN_ENTRY
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO gate_events (event, qr, slot_id, note, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+    """, (event, qr, slot_id, note, datetime.now().isoformat(timespec="seconds")))
+    conn.commit()
+    conn.close()
+
+
+def get_gate_events(limit: int = 50):
+    """Most recent gate events first — used by /api/gate/events."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM gate_events ORDER BY id DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# SLOT RESERVATIONS & TRANSACTIONS
+# ---------------------------------------------------------------------------
+def log_slot_reservation(slot_id: str, tx_id: str, qr: str, duration: float = 60.0):
+    """Appends one row to slot_reservations."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now = datetime.now()
+    expires_at = datetime.fromtimestamp(now.timestamp() + duration)
+    cur.execute("""
+        INSERT INTO slot_reservations (slot_id, tx_id, qr, status, reserved_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (slot_id, tx_id, qr, 'RESERVED', now.isoformat(timespec='seconds'), expires_at.isoformat(timespec='seconds')))
+    conn.commit()
+    conn.close()
+
+
+def update_slot_reservation_status(tx_id: str, status: str):
+    """Updates the status of a slot reservation by transaction ID."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE slot_reservations SET status = ? WHERE tx_id = ?
+    """, (status, tx_id))
+    conn.commit()
+    conn.close()
+
+
+def log_parking_transaction(transaction_id: str, qr: str, action: str, status: str, fee: float = None, slot_id: str = None, error_reason: str = None):
+    """Appends one row to parking_transactions."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO parking_transactions (transaction_id, qr, action, status, fee, slot_id, timestamp, error_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (transaction_id, qr, action, status, fee, slot_id, datetime.now().isoformat(timespec='seconds'), error_reason))
+    conn.commit()
+    conn.close()
+
+
+def get_parking_transactions(limit: int = 50):
+    """Most recent transactions first."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM parking_transactions ORDER BY id DESC LIMIT ?", (limit,))
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
