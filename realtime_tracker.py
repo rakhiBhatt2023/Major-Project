@@ -55,6 +55,11 @@ class RealtimeParkingTracker:
         self.active_backend_name = "CAP_DSHOW"
         self.reservations = {}               # { slot_id: { tx_id, qr, timestamp, expire_at } }
 
+        # Single camera debounce & QR freeze protection
+        self.qr_freeze_until = 0.0           # Monotonic timestamp until which slot status is frozen
+        self.stable_frames_required = 5      # Must be stable across 5 consecutive frames before state change
+        self.slot_debounce = {k: {"pending_state": False, "stable_count": 0} for k in self.slots}
+
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=25, detectShadows=False)
 
         self.cap = None
@@ -233,6 +238,10 @@ class RealtimeParkingTracker:
         print("[INFO] Camera capture stopped cleanly.")
         return True
 
+    def freeze_occupancy_for_qr(self, duration: float = 2.0):
+        """Freezes slot status during QR scan and for ~2s after, preventing phone/hand from flipping slots."""
+        self.qr_freeze_until = max(self.qr_freeze_until, time.monotonic() + duration)
+
     # PART 2 & PART 4: Process Camera Frame & Compute ROI Occupancy
     def process_camera_frame(self, frame, threshold_pixels=1600):
         if frame is None:
@@ -266,9 +275,27 @@ class RealtimeParkingTracker:
                 else:
                     is_occupied = (edge_count > 1500) or (motion_count > 1500)
 
-                # Update live occupancy status
+                # Update live occupancy status with QR freeze & consecutive frame debounce
                 if self.use_live_webcam:
-                    self.occupancy_status[slot_id] = is_occupied
+                    # If QR code was detected recently, freeze all slot status transitions
+                    if time.monotonic() < self.qr_freeze_until:
+                        continue
+
+                    # Consecutive frame debounce: require N consecutive frames before flipping state
+                    deb = self.slot_debounce.get(slot_id, {"pending_state": is_occupied, "stable_count": 0})
+                    if is_occupied == self.occupancy_status[slot_id]:
+                        deb["pending_state"] = is_occupied
+                        deb["stable_count"] = 0
+                    else:
+                        if deb["pending_state"] == is_occupied:
+                            deb["stable_count"] += 1
+                            if deb["stable_count"] >= self.stable_frames_required:
+                                self.occupancy_status[slot_id] = is_occupied
+                                deb["stable_count"] = 0
+                        else:
+                            deb["pending_state"] = is_occupied
+                            deb["stable_count"] = 1
+                    self.slot_debounce[slot_id] = deb
 
         self.last_detection_timestamp = time.monotonic()
         return self.occupancy_status
@@ -288,10 +315,10 @@ class RealtimeParkingTracker:
         return occupied_count, level
 
     # Live slot data payload — feeds distance + status + congestion
-    def get_live_slot_feed(self) -> dict:
+    def get_live_slot_feed(self, demo_mode: bool = False) -> dict:
         """Returns real-time data for all slots with 4 states (VACANT, OCCUPIED, RESERVED, UNKNOWN)."""
         self.cleanup_expired_reservations()
-        healthy = self.is_camera_healthy()
+        healthy = self.is_camera_healthy() or demo_mode
         feed = {}
 
         for slot_id, data in self.slots.items():

@@ -21,11 +21,14 @@ session is leaving, anyone else is arriving (same rule as the minor).
 """
 
 import uuid
+from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 import db
 import payment
 from serial_manager import serial_manager
+
+DOUBLE_SCAN_GUARD_SECONDS = 5.0  # Configurable cooldown between entry and exit to prevent accidental double-scans
 
 gate_bp = Blueprint("gate", __name__)
 
@@ -40,11 +43,49 @@ def init_gate_routes(tracker, get_recommended_slot):
     _get_recommended_slot = get_recommended_slot
 
 
+_latest_scan_result = {
+    "qr": None,
+    "timestamp": None,
+    "action": None,
+    "status": "AWAITING_SCAN",
+    "message": "Awaiting scan",
+    "driver": None,
+    "vehicle": None,
+    "slot_id": None,
+    "fee": None,
+    "wallet_after": None,
+    "duration_minutes": None,
+    "payment": {},
+    "recommended_slot": {},
+    "success": None
+}
+
+
+def record_scan_result(qr, action, success, message, payment_info=None, rec=None):
+    _latest_scan_result["qr"] = qr
+    _latest_scan_result["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _latest_scan_result["action"] = action
+    _latest_scan_result["success"] = success
+    _latest_scan_result["status"] = "ACCEPTED" if success else "REJECTED"
+    _latest_scan_result["message"] = message
+    pay = payment_info or {}
+    _latest_scan_result["driver"] = pay.get("driver")
+    _latest_scan_result["vehicle"] = pay.get("vehicle")
+    _latest_scan_result["slot_id"] = pay.get("slot_id") or (rec.get("slot_id") if rec else None)
+    _latest_scan_result["fee"] = pay.get("fee") or pay.get("charged_now") or pay.get("total_paid")
+    _latest_scan_result["wallet_after"] = pay.get("wallet_after")
+    _latest_scan_result["duration_minutes"] = pay.get("duration_minutes")
+    _latest_scan_result["payment"] = pay
+    _latest_scan_result["recommended_slot"] = rec or {}
+
+
 def _vacant_count(feed: dict) -> int:
     return sum(1 for s in feed.values() if s.get("vacant", False))
 
 
 def _fail(message, status, error_code=None, qr=None, **extra):
+    if qr:
+        record_scan_result(qr, extra.get("action", "scan"), False, message)
     payload = {"success": False, "message": message, **extra}
     if error_code:
         payload["error_code"] = error_code
@@ -60,14 +101,21 @@ def _do_entry(qr, fee=None):
     fee = payment.ENTRY_FEE if fee is None else fee
     tx_id = f"TX-{uuid.uuid4().hex[:8].upper()}"
 
-    # 1) Gate controller must be online BEFORE any money moves
-    if not serial_manager.connected:
+    demo_active = False
+    try:
+        from app import _demo_mode
+        demo_active = bool(_demo_mode)
+    except Exception:
+        pass
+
+    # 1) Gate controller must be online BEFORE any money moves (unless in Demo Mode)
+    if not serial_manager.connected and not demo_active:
         db.log_gate_event("ENTRY_DENIED_GATE_OFFLINE", qr, None, "Arduino offline")
         db.log_parking_transaction(tx_id, qr, "ENTRY", "FAILED", fee=fee, error_reason="GATE_OFFLINE")
         return _fail("Gate controller (Arduino) is offline. Nothing charged.", 503, error_code="GATE_OFFLINE", qr=qr)
 
-    # 2) Camera health & freshness check
-    if _tracker and not _tracker.is_camera_healthy():
+    # 2) Camera health & freshness check (unless in Demo Mode)
+    if _tracker and not _tracker.is_camera_healthy() and not demo_active:
         serial_manager.send("DENIED")
         db.log_gate_event("ENTRY_DENIED_CAMERA_OFFLINE", qr, None, "Camera offline / detection stale")
         db.log_parking_transaction(tx_id, qr, "ENTRY", "FAILED", fee=fee, error_reason="CAMERA_OFFLINE")
@@ -123,6 +171,7 @@ def _do_entry(qr, fee=None):
     serial_manager.send(f"ACCESS_GRANTED:{fee:g}")
     serial_manager.send(f"GOTO:{slot_id}")
     db.log_gate_event("ENTRY_GRANTED", qr, slot_id, message)
+    record_scan_result(qr, "entry", True, message, info, rec)
 
     return jsonify({
         "success": True,
@@ -136,7 +185,14 @@ def _do_entry(qr, fee=None):
 
 
 def _do_exit(qr):
-    if not serial_manager.connected:
+    demo_active = False
+    try:
+        from app import _demo_mode
+        demo_active = bool(_demo_mode)
+    except Exception:
+        pass
+
+    if not serial_manager.connected and not demo_active:
         return _fail("Gate controller (Arduino) is offline.", 503, qr=qr)
 
     ok, message, info = payment.process_exit(qr)
@@ -147,6 +203,7 @@ def _do_exit(qr):
 
     serial_manager.send("EXIT_OK")
     db.log_gate_event("EXIT_GRANTED", qr, info.get("slot_id"), message)
+    record_scan_result(qr, "exit", True, message, info, None)
     return jsonify({
         "success": True,
         "action": "exit",
@@ -170,8 +227,22 @@ def gate_scan():
     _, qr = _qr_from_request()
     if not qr:
         return _fail("qr is required", 400)
-    if payment.has_active_session(qr):
+
+    # Check for active session (exit flow)
+    driver = payment.find_driver(qr)
+    if driver and payment._active_session(driver["driver_id"]):
+        sess = payment._active_session(driver["driver_id"])
+        # Guard: prevent accidental re-scan immediately after entry
+        if sess and sess.get("entrytime"):
+            try:
+                entry_dt = datetime.strptime(sess["entrytime"], payment.TIME_FMT)
+                elapsed = (datetime.now() - entry_dt).total_seconds()
+                if elapsed < DOUBLE_SCAN_GUARD_SECONDS:
+                    return _fail("Duplicate scan ignored (cooldown 5s).", 429, error_code="DUPLICATE_SCAN", qr=qr)
+            except Exception:
+                pass
         return _do_exit(qr)
+
     return _do_entry(qr)
 
 
@@ -212,12 +283,24 @@ def gate_manual(action):
 
 @gate_bp.route("/api/gate/status")
 def gate_status():
-    feed = _tracker.get_live_slot_feed()
+    feed = _tracker.get_live_slot_feed() if _tracker else {}
     return jsonify({
         "arduino": serial_manager.status(),
         "total_slots": len(feed),
         "vacant_slots": _vacant_count(feed),
+        "last_scan": _latest_scan_result,
     })
+
+
+@gate_bp.route("/api/gate/last_scan")
+def gate_last_scan():
+    return jsonify(_latest_scan_result)
+
+
+@gate_bp.route("/api/gate/sessions")
+def gate_sessions():
+    limit = request.args.get("limit", 50, type=int)
+    return jsonify(db.get_recent_sessions(limit))
 
 
 @gate_bp.route("/api/gate/events")

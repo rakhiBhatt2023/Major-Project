@@ -75,6 +75,7 @@ def process_scanned_qr(qr_text: str):
     if not qr_text:
         return None
     qr_text = qr_text.strip()
+    tracker.freeze_occupancy_for_qr(2.5)
     now = time.monotonic()
 
     with _qr_lock:
@@ -137,6 +138,7 @@ def _qr_worker_thread():
                 try:
                     qr_text, _, _ = _qr_detector.detectAndDecode(frame)
                     if qr_text:
+                        tracker.freeze_occupancy_for_qr(2.5)
                         process_scanned_qr(qr_text)
                 except Exception as qr_err:
                     pass
@@ -194,9 +196,33 @@ def generate_video_stream():
 # Flask Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
+_demo_mode = False
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/admin')
+def admin():
+    return render_template('admin.html')
+
+
+@app.route('/api/demo/status')
+def api_demo_status():
+    return jsonify({"demo_mode": _demo_mode})
+
+
+@app.route('/api/demo/toggle', methods=['POST'])
+def api_demo_toggle():
+    global _demo_mode
+    data = request.get_json(silent=True) or {}
+    if "enabled" in data:
+        _demo_mode = bool(data["enabled"])
+    else:
+        _demo_mode = not _demo_mode
+    return jsonify({"demo_mode": _demo_mode, "status": "ok"})
 
 
 @app.route('/video_feed')
@@ -230,18 +256,34 @@ def api_frame():
 
 @app.route('/api/slots')
 def api_slots():
-    return jsonify(tracker.get_live_slot_feed())
+    return jsonify(tracker.get_live_slot_feed(demo_mode=_demo_mode))
 
 
 @app.route('/api/system/status')
 def api_system_status():
     """One-stop health check for the whole integrated system."""
-    feed = tracker.get_live_slot_feed()
+    feed = tracker.get_live_slot_feed(demo_mode=_demo_mode)
+    ard_status = serial_manager.status()
+    cam_active = tracker.use_live_webcam or _demo_mode
+
+    if _demo_mode:
+        ard_status["connected"] = True
+        ard_status["port"] = ard_status.get("port") or "COM7 (Simulated)"
+        if not ard_status.get("last_air"):
+            ard_status["last_air"] = {
+                "sensor": "MQ135",
+                "raw_value": 285,
+                "alert_level": "SAFE",
+                "exceedance": False,
+                "message": "Simulated air reading within safe range."
+            }
+
     return jsonify({
-        'camera_active': tracker.use_live_webcam,
+        'camera_active': cam_active,
         'total_slots': len(feed),
         'vacant_slots': sum(1 for s in feed.values() if s['vacant']),
-        'arduino': serial_manager.status(),
+        'arduino': ard_status,
+        'demo_mode': _demo_mode,
     })
 
 

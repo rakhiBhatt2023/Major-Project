@@ -82,7 +82,7 @@ def get_best_slot(feed: dict) -> dict:
 # ---------------------------------------------------------------------------
 def get_baseline_slot(feed: dict) -> dict:
     """
-    Naive baseline: just the first vacant slot in feed order (A1 -> C3),
+    Naive baseline: just the first vacant slot in feed order (A1 -> B2),
     with no scoring applied. Used to prove the scoring logic adds value.
     """
     for slot in feed.values():

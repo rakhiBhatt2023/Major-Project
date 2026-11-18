@@ -11,16 +11,7 @@ Stores live MQ-series sensor readings in SQLite.
 import sqlite3
 from datetime import datetime
 
-from db import DB_PATH
-
-
-def get_connection():
-    """
-    Create a connection to the existing SmartPark SQLite database.
-    """
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+from db import DB_PATH, get_connection
 
 
 def create_air_quality_table():

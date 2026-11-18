@@ -64,17 +64,9 @@ def process_sensor_reading(raw_value, timestamp=None):
         alert_data
     )
 
-    # Console output
-    print("----------------------------------------")
-    print("AIR QUALITY READING")
-    print("----------------------------------------")
-    print("Sensor       :", alert_data["sensor"])
-    print("Raw Value    :", alert_data["raw_value"])
-    print("Alert Level  :", alert_data["alert_level"])
-    print("Exceedance   :", alert_data["exceedance"])
-    print("Message      :", alert_data["message"])
-    print("Database ID  :", reading_id)
-    print("----------------------------------------")
+    # Log to console only when threshold exceeded (keeps terminal clean)
+    if alert_data.get("exceedance"):
+        print(f"[AIR ALERT] {alert_data['sensor']} raw={alert_data['raw_value']} ({alert_data['alert_level']})")
 
     return alert_data
 

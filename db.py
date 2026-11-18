@@ -29,8 +29,10 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smart_parkin
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=10000;")
     return conn
 
 
@@ -276,6 +278,28 @@ def get_parking_transactions(limit: int = 50):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM parking_transactions ORDER BY id DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_recent_sessions(limit: int = 50):
+    """Returns most recent parking sessions joined with driver details for dashboard display."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.sessionid, s.driver_id, COALESCE(d.name, s.driver_id) AS driver,
+               COALESCE(d.vehicle_no, '-') AS vehicle,
+               r.slotid AS slot_id, s.entrytime, s.exittime, s.fee, s.status
+        FROM sessions s
+        LEFT JOIN drivers d ON s.driver_id = d.driver_id
+        LEFT JOIN (
+            SELECT driver_id, slotid, entrytime, status
+            FROM parkingrecords
+            GROUP BY driver_id, entrytime
+        ) r ON s.driver_id = r.driver_id AND r.entrytime = s.entrytime
+        ORDER BY s.sessionid DESC LIMIT ?
+    """, (limit,))
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows

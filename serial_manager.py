@@ -28,8 +28,7 @@ from air_quality_monitor import process_serial_json
 
 # ---------------------------------------------------------------------------
 # CONFIG
-# ---------------------------------------------------------------------------
-SERIAL_PORT = None            # e.g. "COM3". None = auto-detect the Nano.
+SERIAL_PORT = "COM7"          # Project default: COM7 @ 9600 baud
 BAUD_RATE = 9600
 RECONNECT_SECONDS = 5
 BOOT_WAIT_SECONDS = 2.5       # Nano resets when the port opens
@@ -121,21 +120,32 @@ class SerialManager:
 
     def _connect(self) -> bool:
         import os
-        env_port = os.environ.get("ARDUINO_PORT", "").strip()
-        mode = "env"
+        ports_to_try = []
         if env_port and env_port.upper() != "AUTO":
-            port = env_port
+            ports_to_try.append((env_port, "env"))
         else:
-            port = SERIAL_PORT or find_arduino_port()
-            mode = "auto-detect"
+            if SERIAL_PORT:
+                ports_to_try.append((SERIAL_PORT, "configured (COM7)"))
+            auto_port = find_arduino_port()
+            if auto_port and auto_port != SERIAL_PORT:
+                ports_to_try.append((auto_port, "auto-detect"))
 
-        if not port:
+        if not ports_to_try:
             self.last_error = "No Arduino port found"
             return False
-        try:
-            ser = serial.Serial(port, BAUD_RATE, timeout=1)
-        except serial.SerialException as e:
-            self.last_error = str(e)
+
+        ser = None
+        used_mode = "unknown"
+        for p, m in ports_to_try:
+            try:
+                ser = serial.Serial(p, BAUD_RATE, timeout=1)
+                port = p
+                used_mode = m
+                break
+            except (serial.SerialException, OSError) as e:
+                self.last_error = str(e)
+
+        if ser is None:
             return False
 
         time.sleep(BOOT_WAIT_SECONDS)
@@ -148,7 +158,7 @@ class SerialManager:
             self.connect_count += 1
             self.last_error = None
             self.last_air_level = None   # forces the LCD to resync
-        print(f"[SERIAL] Connected to Arduino on {port} (Mode: {mode})")
+        print(f"[SERIAL] Connected to Arduino on {port} (Mode: {used_mode})")
         return True
 
     def _disconnect(self):

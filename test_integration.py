@@ -143,7 +143,7 @@ def main():
                    f"{code} + {body.get('action')} + {slot}",
                    passed=(code == 200 and body.get("action") == "entry" and slot is not None))
             wallet_after = (body.get("payment") or {}).get("wallet_after")
-            record("Obj1: wallet reduced by the Rs.20 entry fee", 480.0, wallet_after)
+            record("Obj1: wallet reduced by the Rs.10 entry fee", 490.0, wallet_after)
             time.sleep(10)   # Arduino is busy opening/closing the gate
 
             code, body = call("POST", "/api/gate/scan", {"qr": driver_id})

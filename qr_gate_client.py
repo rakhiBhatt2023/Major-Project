@@ -76,20 +76,21 @@ def fetch_http_frame():
 def main():
     global last_text, last_time, banner
 
-    use_http_fallback = False
-    cap = None
-
-    if STREAM_URL:
+    force_local = os.environ.get("FORCE_LOCAL_CAMERA", "0") == "1"
+    if not force_local and not STREAM_URL:
+        use_http_fallback = True
+        print(f"[INFO] Using shared app.py camera stream ({FRAME_URL}) — no camera device locking.")
+    elif STREAM_URL:
         print(f"Connecting to QR camera stream URL: {STREAM_URL}")
         cap = cv2.VideoCapture(STREAM_URL)
     else:
         print(f"Opening local QR camera device {QR_CAMERA_INDEX}...")
         cap = cv2.VideoCapture(QR_CAMERA_INDEX, cv2.CAP_DSHOW)
 
-    if not cap or not cap.isOpened():
+    if not use_http_fallback and (not cap or not cap.isOpened()):
         print(f"[WARN] Camera {QR_CAMERA_INDEX} not openable directly. Switching to shared app.py HTTP stream ({FRAME_URL}).")
         use_http_fallback = True
-    else:
+    elif cap and cap.isOpened():
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartPark AI – System Administration &amp; Testing</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="header-title">SmartPark AI &mdash; System Administration</h1>
+        <span class="header-sub">Developer &amp; Hardware Diagnostics</span>
+      </div>
+
+      <div class="header-right">
+        <span id="admin-demo-badge" class="demo-badge" style="display:none;">DEMO MODE ACTIVE</span>
+        <a href="/" class="nav-link">&larr; Back to Dashboard</a>
+      </div>
+    </header>
+
+    <!-- ── DEMO MODE BANNER ────────────────────────────────────────────────── -->
+    <div class="card" style="border-left: 4px solid var(--amber);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div style="font-weight:700; font-size:15px; margin-bottom:2px;">Demo Mode (Hardware Simulation)</div>
+          <div style="font-size:12px; color:#4b5563;">
+            Runs the entire system on simulated slot occupancy and mock gate/sensor data so you can demo even if camera, Arduino COM7, or MQ-135 is disconnected.
+          </div>
+        </div>
+        <div>
+          <button id="btn-toggle-demo" class="btn btn-primary" onclick="toggleDemoMode()">Enable Demo Mode</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DIAGNOSTICS GRID ────────────────────────────────────────────────── -->
+    <div class="main-grid">
+
+      <!-- LEFT: SLOT OCCUPANCY SIMULATOR & CALIBRATION -->
+      <div>
+
+        <!-- Manual Slot Simulator -->
+        <div class="card">
+          <div class="card-title">
+            <span>Manual Slot Occupancy Simulator</span>
+            <span class="card-subtext">Click slot to toggle vacant/occupied</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:14px;">
+            <button id="sim-btn-A1" class="btn" style="padding:12px;" onclick="toggleSlot('A1')">Slot A1: Loading...</button>
+            <button id="sim-btn-A2" class="btn" style="padding:12px;" onclick="toggleSlot('A2')">Slot A2: Loading...</button>
+            <button id="sim-btn-B1" class="btn" style="padding:12px;" onclick="toggleSlot('B1')">Slot B1: Loading...</button>
+            <button id="sim-btn-B2" class="btn" style="padding:12px;" onclick="toggleSlot('B2')">Slot B2: Loading...</button>
+          </div>
+
+          <div style="font-size:12px; font-weight:600; margin-bottom:6px;">Scenarios &amp; Presets:</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" onclick="applyPreset('test1')">Preset: Low Congestion</button>
+            <button class="btn" onclick="applyPreset('test2')">Preset: High Congestion</button>
+            <button class="btn" onclick="applyPreset('reset')">Preset: Reset Defaults</button>
+          </div>
+        </div>
+
+        <!-- Camera Calibration & Hardware Controls -->
+        <div class="card">
+          <div class="card-title">
+            <span>Camera &amp; Vision Controls</span>
+            <span id="cam-health-badge" class="slot-badge" style="background:#e5e7eb; color:#374151;">Checking...</span>
+          </div>
+
+          <p style="font-size:12px; color:#4b5563; margin-bottom:12px;">
+            Calibration captures empty slot baseline pixels from the live camera for differential background subtraction.
+          </p>
+
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" onclick="calibrateSlots()">Calibrate Empty Slots</button>
+            <button class="btn" onclick="reconnectCamera()">Reconnect Camera</button>
+            <button class="btn" onclick="stopCamera()">Stop Camera</button>
+          </div>
+
+          <div id="cam-action-msg" style="font-size:12px; color:#6b7280; margin-top:10px;"></div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT: GATE SERVO TESTING & RAW API PAYLOAD -->
+      <div>
+
+        <!-- Gate Hardware Test (No Payment) -->
+        <div class="card">
+          <div class="card-title">
+            <span>Gate Hardware Test (Servo Pin D9)</span>
+            <span class="card-subtext">Direct Serial Commands</span>
+          </div>
+
+          <p style="font-size:12px; color:#4b5563; margin-bottom:12px;">
+            Tests the servo motor and red/green LEDs on Arduino COM7 without making financial deductions or updating sessions.
+          </p>
+
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button class="btn" onclick="gtManual('open_entry')">Open Entry Gate</button>
+            <button class="btn" onclick="gtManual('open_exit')">Open Exit Gate</button>
+            <button class="btn" onclick="gtManual('close')">Close Gate</button>
+          </div>
+
+          <div id="gate-action-msg" style="font-size:12px; color:#6b7280;"></div>
+        </div>
+
+        <!-- Raw Slots API Payload (/api/slots) -->
+        <div class="card">
+          <div class="card-title">
+            <span>Raw Slots API Feed (/api/slots)</span>
+            <span class="card-subtext">Live JSON</span>
+          </div>
+
+          <pre id="json-preview" style="background:#f9fafb; border:1px solid var(--border); border-radius:var(--radius); padding:10px; font-size:11px; max-height:220px; overflow:auto; color:#111827;">Loading API feed...</pre>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let demoActive = false;
+
+    // 1. Fetch Demo Mode Status
+    async function fetchDemoStatus() {
+      try {
+        const res = await fetch('/api/demo/status?t=' + Date.now());
+        const data = await res.json();
+        demoActive = Boolean(data.demo_mode);
+
+        const badge = document.getElementById('admin-demo-badge');
+        const btn = document.getElementById('btn-toggle-demo');
+
+        if (demoActive) {
+          badge.style.display = 'inline-block';
+          btn.textContent = 'Disable Demo Mode';
+          btn.className = 'btn';
+        } else {
+          badge.style.display = 'none';
+          btn.textContent = 'Enable Demo Mode';
+          btn.className = 'btn btn-primary';
+        }
+      } catch (e) {
+        console.error('Demo status error:', e);
+      }
+    }
+
+    async function toggleDemoMode() {
+      try {
+        const res = await fetch('/api/demo/toggle', { method: 'POST' });
+        const data = await res.json();
+        fetchDemoStatus();
+        fetchSlots();
+      } catch (e) {
+        alert('Could not toggle demo mode: ' + e.message);
+      }
+    }
+
+    // 2. Fetch Slots & Update Simulator Buttons
+    async function fetchSlots() {
+      try {
+        const res = await fetch('/api/slots?t=' + Date.now(), { cache: 'no-store' });
+        const feed = await res.json();
+
+        ['A1', 'A2', 'B1', 'B2'].forEach(slotId => {
+          const btn = document.getElementById('sim-btn-' + slotId);
+          if (!btn) return;
+          const s = feed[slotId] || {};
+          const status = s.status || 'UNKNOWN';
+
+          btn.textContent = `Slot ${slotId}: ${status}`;
+          if (status === 'VACANT') {
+            btn.style.background = '#f0fdf4';
+            btn.style.borderColor = '#86efac';
+            btn.style.color = '#15803d';
+          } else if (status === 'OCCUPIED') {
+            btn.style.background = '#f3f4f6';
+            btn.style.borderColor = '#d1d5db';
+            btn.style.color = '#374151';
+          } else {
+            btn.style.background = '#ffffff';
+            btn.style.borderColor = '#e5e7eb';
+            btn.style.color = '#111827';
+          }
+        });
+
+        const pre = document.getElementById('json-preview');
+        if (pre) pre.textContent = JSON.stringify(feed, null, 2);
+      } catch (e) {
+        console.error('Slots fetch error:', e);
+      }
+    }
+
+    // 3. Toggle Slot Occupancy
+    async function toggleSlot(slotId) {
+      try {
+        await fetch('/api/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slot_id: slotId })
+        });
+        fetchSlots();
+      } catch (e) {
+        alert('Toggle error: ' + e.message);
+      }
+    }
+
+    // 4. Apply Presets
+    async function applyPreset(id) {
+      try {
+        await fetch('/api/preset/' + id, { method: 'POST' });
+        fetchSlots();
+      } catch (e) {
+        alert('Preset error: ' + e.message);
+      }
+    }
+
+    // 5. Calibration & Camera Controls
+    async function calibrateSlots() {
+      const msg = document.getElementById('cam-action-msg');
+      msg.textContent = 'Calibrating empty slots baseline...';
+      try {
+        const res = await fetch('/api/camera/calibrate', { method: 'POST' });
+        const data = await res.json();
+        msg.textContent = data.message || 'Calibration completed.';
+        fetchSlots();
+      } catch (e) {
+        msg.textContent = 'Calibration error: ' + e.message;
+      }
+    }
+
+    async function reconnectCamera() {
+      const msg = document.getElementById('cam-action-msg');
+      msg.textContent = 'Reconnecting camera device...';
+      try {
+        const res = await fetch('/api/camera/reconnect', { method: 'POST' });
+        const data = await res.json();
+        msg.textContent = data.status === 'ok' ? 'Camera reconnected successfully.' : 'Camera connection failed.';
+        fetchSlots();
+      } catch (e) {
+        msg.textContent = 'Camera reconnect error: ' + e.message;
+      }
+    }
+
+    async function stopCamera() {
+      const msg = document.getElementById('cam-action-msg');
+      msg.textContent = 'Stopping camera capture...';
+      try {
+        const res = await fetch('/api/camera/stop', { method: 'POST' });
+        const data = await res.json();
+        msg.textContent = 'Camera stopped cleanly.';
+        fetchSlots();
+      } catch (e) {
+        msg.textContent = 'Camera stop error: ' + e.message;
+      }
+    }
+
+    // 6. Gate Manual Hardware Testing
+    async function gtManual(action) {
+      const msg = document.getElementById('gate-action-msg');
+      msg.textContent = 'Sending ' + action + ' command...';
+      try {
+        const res = await fetch('/api/gate/manual/' + action, { method: 'POST' });
+        const out = await res.json();
+        msg.textContent = out.message || 'Command executed.';
+      } catch (e) {
+        msg.textContent = 'Gate manual error: ' + e.message;
+      }
+    }
+
+    // Initial load & periodic refresh
+    fetchDemoStatus();
+    fetchSlots();
+    setInterval(fetchSlots, 2000);
+  </script>
+</body>
+</html>

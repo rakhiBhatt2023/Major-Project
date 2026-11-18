@@ -191,9 +191,11 @@ class TestSmartParkSystem(unittest.TestCase):
 
         canonical_qr = "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6"
 
-        # Register test driver with canonical QR
+        # Register test driver with canonical QR and clean any lingering test sessions
         conn = db.get_connection()
         cur = conn.cursor()
+        cur.execute("DELETE FROM sessions WHERE driver_id = ?", (canonical_qr,))
+        cur.execute("DELETE FROM parkingrecords WHERE driver_id = ?", (canonical_qr,))
         cur.execute("""
             INSERT OR REPLACE INTO drivers (driver_id, name, vehicle_no, phone, wallet)
             VALUES (?, 'Canonical Driver', 'TEST-CANON-01', '9999999999', 500.0)
@@ -202,6 +204,9 @@ class TestSmartParkSystem(unittest.TestCase):
         conn.close()
 
         serial_manager.connected = True
+        import gate_routes
+        old_cooldown = gate_routes.DOUBLE_SCAN_GUARD_SECONDS
+        gate_routes.DOUBLE_SCAN_GUARD_SECONDS = 0.0
 
         try:
             # 9.1 Camera Offline Error case
@@ -261,6 +266,7 @@ class TestSmartParkSystem(unittest.TestCase):
             self.assertEqual(data_exit["qr"], canonical_qr)
 
         finally:
+            gate_routes.DOUBLE_SCAN_GUARD_SECONDS = old_cooldown
             conn = db.get_connection()
             cur = conn.cursor()
             cur.execute("DELETE FROM sessions WHERE driver_id = ?", (canonical_qr,))
@@ -371,18 +377,29 @@ class TestSmartParkSystem(unittest.TestCase):
 
     def test_15_qr_visible_20s_single_transaction(self):
         """TEST 15: Same QR visible continuously for 20 simulated seconds produces exactly ONE transaction & ONE payment."""
-        from app import process_scanned_qr, app
+        from app import process_scanned_qr, app, tracker, _handled_qrs
         import payment
         from serial_manager import serial_manager
 
         # Ensure serial_manager is marked connected for testing
         serial_manager.connected = True
+        _handled_qrs.clear()
 
-        test_qr = "a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf6"
-        
-        # Ensure driver registered directly in DB
+        test_qr = "test-20s-qr-unique"
+
+        # Ensure camera is healthy and slots are vacant
+        tracker.use_live_webcam = True
+        tracker.last_frame_timestamp = time.monotonic()
+        tracker.last_detection_timestamp = time.monotonic()
+        for s in tracker.slots:
+            tracker.occupancy_status[s] = False
+
+        # Ensure driver registered directly in DB and clean sessions
         conn = db.get_connection()
-        conn.cursor().execute("""
+        cur = conn.cursor()
+        cur.execute("DELETE FROM sessions WHERE driver_id = ?", (test_qr,))
+        cur.execute("DELETE FROM parkingrecords WHERE driver_id = ?", (test_qr,))
+        cur.execute("""
             INSERT OR REPLACE INTO drivers (driver_id, name, vehicle_no, phone, wallet, registered_on)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (test_qr, "Test Driver 20s", "MH-01-2020", "9999999999", 500.0, "2026-10-08 00:00:00"))
@@ -406,7 +423,7 @@ class TestSmartParkSystem(unittest.TestCase):
 
         # Check driver wallet balance after 20s
         updated_driver = payment.find_driver(test_qr)
-        expected_wallet = initial_wallet - 20.0
+        expected_wallet = initial_wallet - payment.ENTRY_FEE
         self.assertEqual(float(updated_driver["wallet"]), expected_wallet, "Wallet was debited more than once!")
 
     def test_16_slow_entry_api_does_not_break_camera_health(self):

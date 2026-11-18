@@ -23,6 +23,8 @@ air_quality_bp = Blueprint(
 )
 
 
+from datetime import datetime
+
 @air_quality_bp.route(
     "/api/air-quality/latest",
     methods=["GET"]
@@ -32,6 +34,24 @@ def latest_air_quality():
     reading = get_latest_air_quality()
 
     if reading is None:
+        try:
+            from app import _demo_mode
+            if _demo_mode:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "id": 0,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "sensor": "MQ135",
+                        "raw_value": 285,
+                        "alert_level": "SAFE",
+                        "exceedance": 0,
+                        "message": "MQ135 reading 285 is within safe range (Demo)."
+                    }
+                })
+        except Exception:
+            pass
+
         return jsonify({
             "success": False,
             "message": "No air-quality readings available."

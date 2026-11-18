@@ -14,12 +14,9 @@ registered keep working:
 
 What changed compared with the minor:
   * The slot is chosen by the AI (green_score.py), not "first free number",
-    and is stored in parkingrecords.slotid (e.g. "A3").
-  * Entry fee is CREDITED at exit (CREDIT_ENTRY_FEE). The minor charged the
-    entry fee AND then a full fee again at exit, so the minimum stay cost 40.
-    Set CREDIT_ENTRY_FEE = False to get the old behaviour back.
-  * No scanner, no serial port and no menu here. Register drivers / make QR
-    codes with menu options 1 and 2 of smartpark_complete.py as before.
+    and is stored in parkingrecords.slotid (e.g. "A1").
+  * Entry fee is CREDITED at exit (CREDIT_ENTRY_FEE).
+  * Fee formula: round(max(10.0, (minutes - 5.0) * 2.0), 2).
 ===============================================================================
 """
 
@@ -29,8 +26,8 @@ from datetime import datetime
 
 import db
 
-ENTRY_FEE = 20.0          # Rs, same as the minor
-HOURLY_RATE = 20.0        # Rs per started hour, same as the minor
+ENTRY_FEE = 10.0          # Base entry fee (Rs 10 covers first 5 minutes)
+PER_MINUTE_RATE = 2.0     # Rs 2 per minute after 5 minutes
 CREDIT_ENTRY_FEE = True   # entry fee counts towards the final fee
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -112,20 +109,56 @@ def log_scan(qr_text, result, message):
 # LOOKUPS
 # ---------------------------------------------------------------------------
 def find_driver(qr_text):
-    """Supports the new QR (just the driver_id) and the old driver_id|... QR."""
-    driver_id = (qr_text or "").split("|")[0].strip()
-    if not driver_id:
+    """Supports DRIVER_ID:CAR_NUMBER, DRIVER_ID|..., plain driver_id, and vehicle_no."""
+    if not qr_text:
         return None
+    raw = str(qr_text).strip()
+    if not raw:
+        return None
+
     conn = _conn()
     cur = conn.cursor()
+
+    # 1. Direct match on driver_id or vehicle_no
     cur.execute("""
         SELECT driver_id, name, vehicle_no, phone, wallet,
                name AS driver, vehicle_no AS vehicle, wallet AS wallet_balance
-        FROM drivers WHERE driver_id = ?
-    """, (driver_id,))
+        FROM drivers WHERE driver_id = ? OR vehicle_no = ?
+    """, (raw, raw))
     row = cur.fetchone()
+    if row:
+        conn.close()
+        return dict(row)
+
+    # 2. Match candidate before ':' or '|' (e.g. DRIVER_ID:CAR_NUMBER or DRIVER_ID|...)
+    candidate = raw.split(":")[0].split("|")[0].strip()
+    if candidate and candidate != raw:
+        cur.execute("""
+            SELECT driver_id, name, vehicle_no, phone, wallet,
+                   name AS driver, vehicle_no AS vehicle, wallet AS wallet_balance
+            FROM drivers WHERE driver_id = ? OR vehicle_no = ?
+        """, (candidate, candidate))
+        row = cur.fetchone()
+        if row:
+            conn.close()
+            return dict(row)
+
+    # 3. If ':' was present, check if the second part matches vehicle_no
+    if ":" in raw:
+        car_part = raw.split(":", 1)[1].strip()
+        if car_part:
+            cur.execute("""
+                SELECT driver_id, name, vehicle_no, phone, wallet,
+                       name AS driver, vehicle_no AS vehicle, wallet AS wallet_balance
+                FROM drivers WHERE vehicle_no = ?
+            """, (car_part,))
+            row = cur.fetchone()
+            if row:
+                conn.close()
+                return dict(row)
+
     conn.close()
-    return dict(row) if row else None
+    return None
 
 
 get_user = find_driver
@@ -239,12 +272,15 @@ def process_exit(qr_text):
 
     exit_time = _now()
     entry_dt = datetime.strptime(session["entrytime"], TIME_FMT)
-    hours = max(0.0, (datetime.strptime(exit_time, TIME_FMT) - entry_dt).total_seconds() / 3600.0)
+    elapsed_seconds = max(0.0, (datetime.strptime(exit_time, TIME_FMT) - entry_dt).total_seconds())
+    minutes = max(0.0, elapsed_seconds / 60.0)
+    hours = minutes / 60.0
 
-    total_fee = max(ENTRY_FEE, math.ceil(hours) * HOURLY_RATE)
+    # Project formula: max(10, (minutes - 5) * 2)
+    total_fee = round(max(10.0, (minutes - 5.0) * 2.0), 2)
     already_paid = float(session["fee"] or 0) if CREDIT_ENTRY_FEE else 0.0
-    charge_now = max(0.0, total_fee - already_paid)
-    paid_total = already_paid + charge_now
+    charge_now = max(0.0, round(total_fee - already_paid, 2))
+    paid_total = round(already_paid + charge_now, 2)
 
     wallet = float(driver["wallet"] or 0)
     if wallet < charge_now:
@@ -278,11 +314,13 @@ def process_exit(qr_text):
     return True, "Exit approved", {
         "driver": driver["name"],
         "vehicle": driver["vehicle_no"],
+        "duration_minutes": round(minutes, 2),
         "duration_hours": round(hours, 3),
         "charged_now": charge_now,
         "total_paid": paid_total,
         "wallet_after": wallet - charge_now,
         "slot_id": record["slotid"] if record else None,
+        "fee_formula": "max(10, (minutes - 5) * 2)"
     }
 
 

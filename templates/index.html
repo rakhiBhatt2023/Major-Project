@@ -1,1113 +1,641 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Green Parking Optimization System — Objective 2 &amp; 3</title>
-
+  <title>SmartPark AI – Sustainable Smart Parking System</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
-
 <body>
 
   <div class="container">
 
-    <!-- ── HEADER ────────────────────────────── -->
-    <header class="header-box">
-      <div class="header-title">
-        <h1>Real-Time Slot Distance &amp; Local Congestion Tracker</h1>
-
-        <p class="header-sub">
-          Live Camera Occupancy Detection · Fixed Gate Distance Mapping · Local Congestion Calculation
-        </p>
+    <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="header-title">SmartPark AI</h1>
+        <span class="header-sub">AI &amp; IoT Enabled Sustainable Smart Parking System</span>
+        <span id="demo-mode-badge" class="demo-badge" style="display:none;">DEMO MODE</span>
       </div>
 
-      <div class="header-pill" id="cam-pill">
-        <span class="pill-dot" id="pill-dot"></span>
-        <span id="pill-label">Camera Connecting</span>
+      <div class="header-right">
+        <div class="status-label">
+          Camera: <span id="hdr-cam" class="status-val disconnected">Disconnected</span>
+        </div>
+        <div class="status-label">
+          Arduino: <span id="hdr-arduino" class="status-val disconnected">Disconnected</span>
+        </div>
+        <div class="status-label">
+          Gas sensor: <span id="hdr-gas" class="status-val disconnected">Disconnected</span>
+        </div>
+        <span style="color:#d1d5db;">|</span>
+        <span id="last-updated" style="color:#6b7280; font-size:11px;">Last updated: --</span>
+        <a href="/admin" class="nav-link">Admin</a>
       </div>
     </header>
 
+    <!-- ── MAIN TWO-COLUMN SECTION ─────────────────────────────────────────── -->
+    <main class="main-grid">
 
-    <!-- OBJECTIVE 3: AIR QUALITY ALERT BANNER -->
-    <div
-      id="aq-banner"
-      style="display:none; padding:12px 16px; margin:12px 0; font-weight:bold; border-radius:8px;">
-    </div>
-
-
-    <!-- ── KPI METRIC CARDS ──────────────────── -->
-    <div class="kpi-row">
-
-      <div class="kpi-card">
-        <span class="kpi-label">Total Parking Slots</span>
-        <span class="kpi-val" id="val-total">4</span>
-      </div>
-
-      <div class="kpi-card kpi-green">
-        <span class="kpi-label">Vacant Slots</span>
-        <span class="kpi-val" id="val-vacant">--</span>
-      </div>
-
-      <div class="kpi-card kpi-red">
-        <span class="kpi-label">Occupied Slots</span>
-        <span class="kpi-val" id="val-occupied">--</span>
-      </div>
-
-      <div class="kpi-card kpi-blue">
-        <span class="kpi-label">Avg Local Congestion</span>
-        <span class="kpi-val" id="val-congestion">--</span>
-      </div>
-
-    </div>
-
-
-    <!-- ── DUAL PANEL LAYOUT ─────────────────── -->
-    <div class="two-col">
-
-
-      <!-- LEFT PANEL: CAMERA & MANUAL CONTROLS -->
-      <div class="panel">
-
-        <div class="panel-head">
-          <h2>Live Camera Detection Feed</h2>
-          <span class="panel-tag">Live Camera Feed</span>
-        </div>
-
-
-        <!-- CAMERA CONTROLS -->
-        <div class="cam-controls">
-
-          <button
-            id="btn-cam-on"
-            class="cam-btn cam-on"
-            onclick="startCamera()">
-            Start Live Camera
-          </button>
-
-          <button
-            id="btn-cam-off"
-            class="cam-btn cam-off"
-            onclick="stopCamera()">
-            Stop Camera
-          </button>
-
-          <button
-            id="btn-cam-calib"
-            class="cam-btn"
-            style="background:#0284c7; color:#fff;"
-            onclick="calibrateSlots()">
-            Calibrate Empty Slots
-          </button>
-
-        </div>
-
-
-        <!-- CAMERA DISPLAY -->
-        <div class="video-wrap">
-
-          <img
-            id="cam-image"
-            width="600"
-            height="520"
-            style="
-              display:block;
-              width:600px;
-              height:520px;
-              object-fit:cover;
-              background:#000;
-            "
-            alt="Live Camera Feed">
-
-        </div>
-
-
-        <!-- MANUAL SLOT SIMULATOR -->
-        <div class="sim-box">
-
-          <div class="sim-title">
-            Manual Slot Occupancy Simulator
-            <span class="sim-hint">
-              (Click slot to toggle vacant/occupied)
-            </span>
+      <!-- LEFT: CAMERA FEED & 2x2 VISUAL LOT MAP -->
+      <section>
+        <div class="card">
+          <div class="card-title">
+            <span>Camera Stream</span>
+            <span id="cam-status-text" class="card-subtext">Live Detection</span>
           </div>
 
-          <div
-            class="slots-grid"
-            id="slots-grid">
+          <div class="camera-container">
+            <img
+              id="camera-view"
+              class="camera-img"
+              src="/api/frame"
+              alt="Live parking camera feed"
+              onerror="this.style.display='none'; document.getElementById('camera-fallback').style.display='block';">
+            <div id="camera-fallback" style="display:none; color:#9ca3af; padding:40px; text-align:center; font-size:13px;">
+              Camera feed unavailable or stopped.<br>
+              <span style="font-size:11px; color:#6b7280;">Backend capture thread is polling device 0.</span>
+            </div>
           </div>
 
+          <!-- 2x2 Parking Lot Map -->
+          <div class="lot-map-wrapper">
+            <div class="gate-marker">Gate Entry (Distance baseline: 0m)</div>
+
+            <div class="slots-grid-2x2" id="slots-grid">
+              <!-- Rendered dynamically: Slots A1, A2, B1, B2 -->
+              <div class="slot-tile vacant" id="tile-A1">
+                <div class="slot-header"><span class="slot-name">Slot A1</span><span class="slot-badge">Loading</span></div>
+                <div class="slot-details"><span>Dist: 5.0m</span><span>Cong: 0</span></div>
+              </div>
+              <div class="slot-tile vacant" id="tile-A2">
+                <div class="slot-header"><span class="slot-name">Slot A2</span><span class="slot-badge">Loading</span></div>
+                <div class="slot-details"><span>Dist: 7.0m</span><span>Cong: 0</span></div>
+              </div>
+              <div class="slot-tile vacant" id="tile-B1">
+                <div class="slot-header"><span class="slot-name">Slot B1</span><span class="slot-badge">Loading</span></div>
+                <div class="slot-details"><span>Dist: 8.0m</span><span>Cong: 0</span></div>
+              </div>
+              <div class="slot-tile vacant" id="tile-B2">
+                <div class="slot-header"><span class="slot-name">Slot B2</span><span class="slot-badge">Loading</span></div>
+                <div class="slot-details"><span>Dist: 10.0m</span><span>Cong: 0</span></div>
+              </div>
+            </div>
+          </div>
         </div>
+      </section>
 
-      </div>
+      <!-- RIGHT: ENTRY / EXIT & AI RECOMMENDATION -->
+      <section>
 
-
-      <!-- RIGHT PANEL: DATA TABLE & API FEED -->
-      <div class="panel">
-
-        <div class="panel-head">
-          <h2>Distance &amp; Congestion Metrics</h2>
-          <span class="panel-tag">Real-Time Sync</span>
-        </div>
-
-
-        <table class="data-table">
-
-          <thead>
-            <tr>
-              <th>Slot ID</th>
-              <th>Gate Distance</th>
-              <th>Status</th>
-              <th>Local Congestion</th>
-              <th>Congestion Level</th>
-            </tr>
-          </thead>
-
-          <tbody id="table-body"></tbody>
-
-        </table>
-
-
-        <!-- TEST PRESETS -->
-        <div class="preset-box">
-
-          <span class="preset-label">
-            Test Scenarios:
-          </span>
-
-          <div class="preset-btns">
-
-            <button
-              onclick="applyPreset('test1')"
-              class="preset-btn">
-              Test 1: Low Congestion
-            </button>
-
-            <button
-              onclick="applyPreset('test2')"
-              class="preset-btn">
-              Test 2: High Congestion
-            </button>
-
-            <button
-              onclick="applyPreset('reset')"
-              class="preset-btn">
-              Reset Defaults
-            </button>
-
+        <!-- Entry / Exit Panel -->
+        <div class="card">
+          <div class="card-title">
+            <span>Entry &amp; Exit Verification</span>
+            <span id="scan-status-badge" class="slot-badge" style="background:#e5e7eb; color:#374151;">Awaiting Scan</span>
           </div>
 
-        </div>
-
-
-        <!-- LIVE API JSON -->
-        <div class="json-box">
-
-          <div class="json-label">
-            Live API Data Feed Payload (/api/slots)
+          <div class="data-row">
+            <span class="data-label">Last Scanned QR</span>
+            <span class="data-value" id="scan-qr" style="font-family:monospace; font-size:11px;">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Driver / Vehicle</span>
+            <span class="data-value" id="scan-driver">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Action</span>
+            <span class="data-value" id="scan-action">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Assigned Slot</span>
+            <span class="data-value" id="scan-slot" style="color:var(--green-text); font-weight:700;">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Time Parked</span>
+            <span class="data-value" id="scan-duration">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Fee Charged</span>
+            <span class="data-value" id="scan-fee">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Wallet Balance</span>
+            <span class="data-value" id="scan-wallet">--</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Gate Servo Status</span>
+            <span class="data-value" id="scan-gate">Closed</span>
           </div>
 
-          <pre id="json-pre"></pre>
+          <!-- Plain Words Fee Formula -->
+          <div class="formula-box">
+            <strong>Fee Formula:</strong> max(Rs. 10, (minutes - 5) &times; Rs. 2)<br>
+            Base fee of Rs. 10 covers the first 5 minutes of parking; thereafter Rs. 2 per started minute is added.
+          </div>
 
+          <!-- Manual Fallback QR Simulator -->
+          <div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border);">
+            <div style="font-size:12px; font-weight:600; margin-bottom:6px; color:#4b5563;">Manual QR Fallback:</div>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="manual-qr-input" class="input-text" placeholder="e.g. D101:MH-02-AB1234 or Driver ID" style="flex:1;">
+              <button class="btn btn-primary" onclick="simulateQRScan()">Simulate Scan</button>
+            </div>
+          </div>
         </div>
 
+        <!-- AI Green Slot Recommendation & Sustainability -->
+        <div class="card">
+          <div class="card-title">
+            <span>AI Slot Recommendation</span>
+            <span class="card-subtext">Green Parking Score</span>
+          </div>
+
+          <div class="why-box" id="why-box">
+            <div class="why-score-line" id="rec-header">Recommended Slot: <span id="rec-slot-id">--</span></div>
+            <div id="rec-math">Distance: -- m | Congestion: -- cars | Green Score: --</div>
+            <div style="margin-top:4px;" id="rec-savings">Estimated distance saved vs first-free slot: -- m</div>
+            <div class="why-assumption" id="rec-emissions">
+              Estimated emissions saved: -- g CO2 (assumption: passenger vehicle idle &amp; low-speed maneuvering emission factor of 120 g CO2/km).
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- ── BOTTOM SECTION: AIR QUALITY & RECENT SESSIONS ──────────────────── -->
+    <section class="bottom-grid">
+
+      <!-- Air Quality Card (MQ-135) -->
+      <div class="card">
+        <div class="card-title">
+          <span>Air Quality Monitor (MQ-135)</span>
+          <span class="card-subtext" id="aq-last-time">--</span>
+        </div>
+
+        <div class="aq-summary-row">
+          <div class="aq-metric" id="aq-raw-val">--</div>
+          <span class="aq-badge good" id="aq-badge">Good</span>
+          <span style="font-size:12px; color:#6b7280;" id="aq-exceed-text">Within limits</span>
+        </div>
+
+        <p style="font-size:11px; color:#6b7280; line-height:1.4;">
+          Relative index; MQ-135 sensor requires ~3 minutes to stabilise after power-on.
+        </p>
+
+        <!-- Canvas Line Chart -->
+        <canvas id="aq-chart" class="aq-chart-canvas" width="460" height="90"></canvas>
       </div>
 
-    </div>
+      <!-- Recent Sessions Table -->
+      <div class="card">
+        <div class="card-title">
+          <span>Recent Sessions</span>
+          <span class="card-subtext">Newest First</span>
+        </div>
 
-
-    <!-- OBJECTIVE 3: AIR QUALITY MONITOR -->
-    <div
-      class="panel"
-      style="margin-top:20px;">
-
-      <div class="panel-head">
-
-        <h2>Air Quality Monitor (MQ-135)</h2>
-
-        <span class="panel-tag">
-          Sensor Live Feed
-        </span>
-
+        <div style="overflow-x:auto;">
+          <table class="simple-table">
+            <thead>
+              <tr>
+                <th>Driver</th>
+                <th>Vehicle</th>
+                <th>Slot</th>
+                <th>Entry Time</th>
+                <th>Exit Time</th>
+                <th>Fee</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-tbody">
+              <tr><td colspan="7" style="color:#9ca3af; text-align:center; padding:16px;">Loading sessions...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-
-      <table class="data-table">
-
-        <thead>
-
-          <tr>
-            <th>Alert Status</th>
-            <th>Raw Sensor Value</th>
-            <th>Threshold Exceeded</th>
-            <th>Message</th>
-            <th>Last Updated</th>
-          </tr>
-
-        </thead>
-
-
-        <tbody>
-
-          <tr>
-
-            <td>
-              <strong id="aq-level">
-                No data yet
-              </strong>
-            </td>
-
-            <td id="aq-raw">
-              --
-            </td>
-
-            <td id="aq-exceed">
-              --
-            </td>
-
-            <td id="aq-msg">
-              --
-            </td>
-
-            <td id="aq-time">
-              --
-            </td>
-
-          </tr>
-
-        </tbody>
-
-      </table>
-
-
-      <p
-        id="aq-summary"
-        style="margin-top:12px;">
-        Summary: --
-      </p>
-
-
-      <p
-        style="font-size:12px; color:gray; margin-top:6px;">
-
-        Note: thresholds (300 / 400) are placeholder values for testing,
-        not calibrated ppm limits.
-
-      </p>
-
-    </div>
-
-
-    <!-- GATE PANEL -->
-    {% include 'gate_panel.html' %}
+    </section>
 
   </div>
 
+  <!-- ── JAVASCRIPT LOGIC ────────────────────────────────────────────────── -->
+  <script>
+    const MAX_DISTANCE = 10.0;
+    const MAX_CONGESTION = 2;
+    const WEIGHT_DIST = 0.6;
+    const WEIGHT_CONG = 0.4;
+    const EMISSION_FACTOR_G_PER_M = 0.120; // 120 g CO2 / km = 0.12 g CO2 / m
 
-<script>
+    let aqHistory = [];
 
-  /* ============================================================
-     GLOBAL SETTINGS
-     ============================================================ */
+    // Helper: update text content safely
+    function setTxt(id, txt) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = (txt === null || txt === undefined || txt === '') ? '--' : txt;
+    }
 
-  const STORAGE_KEY = 'parking_slots_v2';
+    // 1. Camera Frame Polling
+    function updateFrame() {
+      const img = document.getElementById('camera-view');
+      const fallback = document.getElementById('camera-fallback');
+      if (img) {
+        img.src = '/api/frame?t=' + Date.now();
+        img.onload = () => { img.style.display = 'block'; if (fallback) fallback.style.display = 'none'; };
+        img.onerror = () => { img.style.display = 'none'; if (fallback) fallback.style.display = 'block'; };
+      }
+    }
 
+    // 2. Poll Slots & AI Recommendation
+    async function pollSlots() {
+      try {
+        const res = await fetch('/api/slots?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const feed = await res.json();
 
-  /* ============================================================
-     PARKING DATA
-     ============================================================ */
+        // Render 2x2 Slots Grid
+        renderSlotsGrid(feed);
 
-  async function fetchData() {
+        // Fetch AI recommendation
+        pollRecommendation(feed);
+      } catch (err) {
+        console.error('Slots error:', err);
+      }
+    }
 
-    try {
+    function renderSlotsGrid(feed) {
+      const slots = ['A1', 'A2', 'B1', 'B2'];
+      slots.forEach(slotId => {
+        const data = feed[slotId];
+        const tile = document.getElementById('tile-' + slotId);
+        if (!tile) return;
 
-      const res = await fetch(
-        '/api/slots?t=' + Date.now(),
-        {
-          cache: 'no-store'
+        if (!data) {
+          tile.className = 'slot-tile unknown';
+          tile.innerHTML = `
+            <div class="slot-header"><span class="slot-name">Slot ${slotId}</span><span class="slot-badge">Offline</span></div>
+            <div class="slot-details"><span>Dist: --</span><span>Cong: --</span></div>
+          `;
+          return;
         }
-      );
 
-      const data = await res.json();
+        let cls = 'slot-tile vacant';
+        let badgeTxt = 'Free';
 
-      updateUI(data);
-
-    } catch (e) {
-
-      console.error('Parking API error:', e);
-
-    }
-
-  }
-
-
-  /* ============================================================
-     CAMERA
-     ============================================================ */
-
-  let frameInterval = null;
-
-  const camImage =
-    document.getElementById('cam-image');
-
-
-  function startFrameLoop() {
-
-    if (frameInterval) {
-      return;
-    }
-
-    /*
-     * Immediately request one frame instead of waiting
-     * for the first 100 ms interval.
-     */
-    grabFrame();
-
-    frameInterval =
-      setInterval(grabFrame, 100);
-
-  }
-
-
-  function stopFrameLoop() {
-
-    if (frameInterval) {
-
-      clearInterval(frameInterval);
-
-      frameInterval = null;
-
-    }
-
-  }
-
-
-  function grabFrame() {
-
-    if (!camImage) {
-      console.error('Camera image element not found.');
-      return;
-    }
-
-    /*
-     * Directly display the JPEG returned by Flask.
-     *
-     * No canvas.
-     * No Image() object.
-     * No drawImage().
-     */
-    camImage.src =
-      '/api/frame?t=' + Date.now();
-
-  }
-
-
-  async function startCamera() {
-
-    try {
-
-      const res =
-        await fetch(
-          '/api/camera/reconnect',
-          {
-            method: 'POST'
-          }
-        );
-
-      if (!res.ok) {
-        console.error(
-          'Camera reconnect failed:',
-          res.status
-        );
-      }
-
-    } catch (e) {
-
-      console.error(
-        'Camera reconnect error:',
-        e
-      );
-
-    }
-
-    startFrameLoop();
-
-    fetchData();
-
-  }
-
-
-  async function stopCamera() {
-
-    try {
-
-      await fetch(
-        '/api/camera/stop',
-        {
-          method: 'POST'
+        if (data.status === 'OCCUPIED') {
+          cls = 'slot-tile occupied';
+          badgeTxt = 'Occupied';
+        } else if (data.status === 'RESERVED') {
+          cls = 'slot-tile reserved';
+          badgeTxt = 'Reserved';
+        } else if (data.status === 'UNKNOWN') {
+          cls = 'slot-tile unknown';
+          badgeTxt = 'No Cam';
         }
-      );
 
-    } catch (e) {
-
-      console.error(
-        'Camera stop error:',
-        e
-      );
-
-    }
-
-    stopFrameLoop();
-
-    fetchData();
-
-  }
-
-
-  /* ============================================================
-     KEYBOARD CONTROLS
-     ============================================================ */
-
-  document.addEventListener(
-    'keydown',
-    e => {
-
-      if (
-        ['q', 's', 'escape']
-          .includes(e.key.toLowerCase())
-      ) {
-
-        stopCamera();
-
-      }
-
-    }
-  );
-
-
-  /* ============================================================
-     MANUAL SLOT TOGGLE
-     ============================================================ */
-
-  async function toggleSlot(slotId) {
-
-    try {
-
-      const res =
-        await fetch(
-          '/api/toggle',
-          {
-            method: 'POST',
-
-            headers: {
-              'Content-Type':
-                'application/json'
-            },
-
-            body: JSON.stringify({
-              slot_id: slotId
-            })
-
-          }
-        );
-
-
-      const result =
-        await res.json();
-
-
-      if (result.data) {
-
-        saveLocal(
-          Object
-            .values(result.data)
-            .filter(s => s.slot_id)
-        );
-
-      }
-
-
-      fetchData();
-
-    } catch (e) {
-
-      console.error(
-        'Toggle slot error:',
-        e
-      );
-
-    }
-
-  }
-
-
-  /* ============================================================
-     PRESETS
-     ============================================================ */
-
-  async function applyPreset(id) {
-
-    try {
-
-      const res =
-        await fetch(
-          `/api/preset/${id}`,
-          {
-            method: 'POST'
-          }
-        );
-
-
-      const result =
-        await res.json();
-
-
-      if (result.data) {
-
-        saveLocal(
-          Object
-            .values(result.data)
-            .filter(s => s.slot_id)
-        );
-
-      }
-
-
-      fetchData();
-
-    } catch (e) {
-
-      console.error(
-        'Preset error:',
-        e
-      );
-
-    }
-
-  }
-
-
-  /* ============================================================
-     LOCAL STORAGE
-     ============================================================ */
-
-  function saveLocal(slots) {
-
-    const occ = {};
-
-    slots.forEach(s => {
-
-      occ[s.slot_id] =
-        !s.vacant;
-
-    });
-
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(occ)
-    );
-
-  }
-
-
-  async function calibrateSlots() {
-    try {
-      const res = await fetch('/api/camera/calibrate', { method: 'POST' });
-      const data = await res.json();
-      console.log('Calibrate response:', data);
-      fetchData();
-    } catch (e) {
-      console.error('Calibration error:', e);
-    }
-  }
-
-
-  async function initLocalStorage() {
-    fetchData();
-  }
-
-
-  /* ============================================================
-     UPDATE DASHBOARD UI
-     ============================================================ */
-
-  function updateUI(feed) {
-
-    delete feed._optimal;
-
-
-    const slots =
-      Object.values(feed);
-
-
-    if (!slots.length) {
-      return;
-    }
-
-
-    const vacant =
-      slots.filter(
-        s => s.vacant
-      ).length;
-
-
-    const occupied =
-      slots.length - vacant;
-
-
-    const avgCong =
-      (
-        slots.reduce(
-          (a, s) =>
-            a + s.congestion,
-          0
-        ) / slots.length
-      ).toFixed(1);
-
-
-    const camActive =
-      (slots[0] || {})
-        .camera_active;
-
-
-    /* Camera status pill */
-
-    const pill =
-      document.getElementById(
-        'cam-pill'
-      );
-
-    const pillDot =
-      document.getElementById(
-        'pill-dot'
-      );
-
-    const pillLbl =
-      document.getElementById(
-        'pill-label'
-      );
-
-
-    if (camActive) {
-
-      pill.className =
-        'header-pill pill-online';
-
-      pillDot.style.background =
-        '#10b981';
-
-      pillLbl.textContent =
-        'Camera Live';
-
-    } else {
-
-      pill.className =
-        'header-pill pill-offline';
-
-      pillDot.style.background =
-        '#ef4444';
-
-      pillLbl.textContent =
-        'Camera Stopped';
-
-    }
-
-
-    /* KPI */
-
-    document.getElementById(
-      'val-total'
-    ).textContent =
-      slots.length;
-
-
-    document.getElementById(
-      'val-vacant'
-    ).textContent =
-      vacant;
-
-
-    document.getElementById(
-      'val-occupied'
-    ).textContent =
-      occupied;
-
-
-    document.getElementById(
-      'val-congestion'
-    ).textContent =
-      avgCong;
-
-
-    /* Slot grid */
-
-    const grid =
-      document.getElementById(
-        'slots-grid'
-      );
-
-
-    grid.innerHTML =
-      slots.map(s => {
-
-        let cls = 'slot-btn vacant';
-        if (s.status === 'OCCUPIED') cls = 'slot-btn occupied';
-        else if (s.status === 'RESERVED') cls = 'slot-btn reserved';
-        else if (s.status === 'UNKNOWN') cls = 'slot-btn unknown';
-
-        return `
-          <button
-            class="${cls}"
-            onclick="toggleSlot('${s.slot_id}')">
-
-            <span class="sn">
-              ${s.slot_id}
-            </span>
-
-            <span class="sd">
-              ${s.distance}m
-            </span>
-
-            <span class="ss">
-              ${s.status}
-            </span>
-
-          </button>
+        tile.className = cls;
+        tile.innerHTML = `
+          <div class="slot-header">
+            <span class="slot-name">Slot ${slotId}</span>
+            <span class="slot-badge">${badgeTxt}</span>
+          </div>
+          <div class="slot-details">
+            <span>Dist: ${data.distance}m</span>
+            <span>Cong: ${data.congestion} cars</span>
+          </div>
         `;
-
-      }).join('');
-
-
-    /* Data table */
-
-    document.getElementById(
-      'table-body'
-    ).innerHTML =
-
-      slots.map(s => {
-
-        let tagCls = 'tag-v';
-        if (s.status === 'OCCUPIED') tagCls = 'tag-o';
-        else if (s.status === 'RESERVED') tagCls = 'tag-r';
-        else if (s.status === 'UNKNOWN') tagCls = 'tag-u';
-
-        return `
-          <tr>
-
-            <td>
-              <strong>
-                Slot ${s.slot_id}
-              </strong>
-            </td>
-
-            <td>
-              ${s.distance} m
-            </td>
-
-            <td>
-              <span
-                class="tag ${tagCls}">
-
-                ${s.status}
-
-              </span>
-            </td>
-
-            <td>
-              ${s.congestion} cars
-            </td>
-
-            <td>
-
-              <span
-                class="cong cong-${s.congestion_level.toLowerCase()}">
-
-                ${s.congestion_level}
-
-              </span>
-
-            </td>
-
-          </tr>
-        `;
-
-      }).join('');
-
-
-    /* JSON preview */
-
-    document.getElementById(
-      'json-pre'
-    ).textContent =
-      JSON.stringify(
-        feed,
-        null,
-        2
-      );
-
-  }
-
-
-  /* ============================================================
-     AIR QUALITY
-     ============================================================ */
-
-  const AQ_COLORS = {
-
-    SAFE: {
-      bg: '#d4edda',
-      fg: '#155724'
-    },
-
-    WARNING: {
-      bg: '#fff3cd',
-      fg: '#856404'
-    },
-
-    HARMFUL: {
-      bg: '#f8d7da',
-      fg: '#721c24'
+      });
     }
 
-  };
+    async function pollRecommendation(feed) {
+      try {
+        const res = await fetch('/api/recommend/compare?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const comp = await res.json();
 
+        const ai = comp.scored_pick;
+        const base = comp.baseline_pick;
 
-  function aqSet(id, value) {
+        // Clear recommendation outline on all tiles
+        ['A1', 'A2', 'B1', 'B2'].forEach(s => {
+          const t = document.getElementById('tile-' + s);
+          if (t) t.classList.remove('recommended');
+        });
 
-    const element =
-      document.getElementById(id);
-
-
-    if (element) {
-
-      element.textContent =
-        value;
-
-    }
-
-  }
-
-
-  async function fetchAirQuality() {
-
-    const banner =
-      document.getElementById(
-        'aq-banner'
-      );
-
-
-    try {
-
-      const res =
-        await fetch(
-          '/api/air-quality/latest?t=' +
-          Date.now(),
-          {
-            cache: 'no-store'
+        if (ai && ai.slot_id) {
+          const recTile = document.getElementById('tile-' + ai.slot_id);
+          if (recTile) {
+            recTile.classList.add('recommended');
+            const hdr = recTile.querySelector('.slot-header');
+            if (hdr && !recTile.querySelector('.rec-tag')) {
+              const tag = document.createElement('span');
+              tag.className = 'rec-tag';
+              tag.textContent = ' (AI Best)';
+              hdr.appendChild(tag);
+            }
           }
-        );
 
+          setTxt('rec-slot-id', 'Slot ' + ai.slot_id);
 
-      const out =
-        await res.json();
+          const normD = Math.min(ai.distance / MAX_DISTANCE, 1.0);
+          const normC = Math.min(ai.congestion / MAX_CONGESTION, 1.0);
+          const distScore = (WEIGHT_DIST * normD).toFixed(2);
+          const congScore = (WEIGHT_CONG * normC).toFixed(2);
 
+          setTxt('rec-math', `Distance: ${ai.distance}m (${distScore}) | Congestion: ${ai.congestion} (${congScore}) | Green Score: ${ai.score}`);
 
-      if (!out.success) {
-
-        aqSet(
-          'aq-level',
-          'No data yet'
-        );
-
-        banner.style.display =
-          'none';
-
-      } else {
-
-        const d =
-          out.data;
-
-
-        const c =
-          AQ_COLORS[d.alert_level]
-          || AQ_COLORS.SAFE;
-
-
-        aqSet(
-          'aq-level',
-          d.alert_level
-        );
-
-        aqSet(
-          'aq-raw',
-          d.raw_value
-        );
-
-        aqSet(
-          'aq-exceed',
-          d.exceedance
-            ? 'YES'
-            : 'NO'
-        );
-
-        aqSet(
-          'aq-msg',
-          d.message || ''
-        );
-
-        aqSet(
-          'aq-time',
-          d.timestamp
-        );
-
-
-        document.getElementById(
-          'aq-level'
-        ).style.color =
-          c.fg;
-
-
-        if (
-          d.alert_level ===
-            'WARNING'
-          ||
-          d.alert_level ===
-            'HARMFUL'
-        ) {
-
-          banner.style.display =
-            'block';
-
-          banner.style.background =
-            c.bg;
-
-          banner.style.color =
-            c.fg;
-
-          banner.textContent =
-            'AIR QUALITY ALERT: ' +
-            d.alert_level +
-            ' (raw value ' +
-            d.raw_value +
-            ')';
-
+          // Distance and emissions saved vs first-free slot
+          if (base && base.distance !== undefined) {
+            const distDiff = Math.max(0, base.distance - ai.distance);
+            const emissSaved = (distDiff * EMISSION_FACTOR_G_PER_M).toFixed(1);
+            setTxt('rec-savings', `Estimated distance saved vs first-available: ${distDiff.toFixed(1)} m`);
+            setTxt('rec-emissions', `Estimated emissions saved: ${emissSaved} g CO2 (assumption: passenger car low-speed maneuvering emission factor of 120 g CO2/km).`);
+          } else {
+            setTxt('rec-savings', 'Optimal allocation: slot is closest with lowest congestion.');
+          }
         } else {
+          setTxt('rec-slot-id', 'None (Lot Full or Camera Offline)');
+          setTxt('rec-math', 'No vacant slots currently available for allocation.');
+          setTxt('rec-savings', '--');
+        }
+      } catch (e) {
+        console.error('Rec error:', e);
+      }
+    }
 
-          banner.style.display =
-            'none';
+    // 3. Poll System Status & Header Indicators
+    async function pollSystemStatus() {
+      try {
+        const res = await fetch('/api/system/status?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const st = await res.json();
 
+        // Demo Mode Badge
+        const demoBadge = document.getElementById('demo-mode-badge');
+        if (demoBadge) {
+          demoBadge.style.display = st.demo_mode ? 'inline-block' : 'none';
         }
 
+        // Camera status
+        const camEl = document.getElementById('hdr-cam');
+        if (st.camera_active) {
+          camEl.textContent = 'Connected';
+          camEl.className = 'status-val connected';
+        } else {
+          camEl.textContent = 'Disconnected';
+          camEl.className = 'status-val disconnected';
+        }
+
+        // Arduino status
+        const ard = st.arduino || {};
+        const ardEl = document.getElementById('hdr-arduino');
+        if (ard.connected) {
+          ardEl.textContent = 'Connected (' + (ard.port || 'COM7') + ')';
+          ardEl.className = 'status-val connected';
+        } else {
+          ardEl.textContent = 'Disconnected';
+          ardEl.className = 'status-val disconnected';
+        }
+
+        // Gas sensor status
+        const gasEl = document.getElementById('hdr-gas');
+        if (ard.connected || st.demo_mode) {
+          gasEl.textContent = 'Connected (MQ-135)';
+          gasEl.className = 'status-val connected';
+        } else {
+          gasEl.textContent = 'Disconnected';
+          gasEl.className = 'status-val disconnected';
+        }
+
+        // Last updated time
+        setTxt('last-updated', 'Last updated: ' + new Date().toLocaleTimeString());
+      } catch (e) {
+        console.error('Status error:', e);
       }
-
-    } catch (e) {
-
-      aqSet(
-        'aq-level',
-        'API not reachable'
-      );
-
-      console.error(
-        'Air quality latest error:',
-        e
-      );
-
     }
 
+    // 4. Poll Last Scan Result & Gate Status
+    async function pollGate() {
+      try {
+        const res = await fetch('/api/gate/status?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const st = await res.json();
 
-    try {
+        const scan = st.last_scan || {};
+        if (scan.qr) {
+          setTxt('scan-qr', scan.qr);
+          setTxt('scan-driver', (scan.driver || '--') + ' / ' + (scan.vehicle || '--'));
+          setTxt('scan-action', (scan.action || '--').toUpperCase());
+          setTxt('scan-slot', scan.slot_id ? 'Slot ' + scan.slot_id : '--');
 
-      const res2 =
-        await fetch(
-          '/api/air-quality/summary?t=' +
-          Date.now(),
-          {
-            cache: 'no-store'
+          if (scan.duration_minutes !== undefined && scan.duration_minutes !== null) {
+            setTxt('scan-duration', scan.duration_minutes + ' min');
+          } else {
+            setTxt('scan-duration', '--');
           }
-        );
 
+          if (scan.fee !== undefined && scan.fee !== null) {
+            setTxt('scan-fee', 'Rs. ' + Number(scan.fee).toFixed(2));
+          } else {
+            setTxt('scan-fee', '--');
+          }
 
-      const out2 =
-        await res2.json();
+          if (scan.wallet_after !== undefined && scan.wallet_after !== null) {
+            setTxt('scan-wallet', 'Rs. ' + Number(scan.wallet_after).toFixed(2));
+          } else {
+            setTxt('scan-wallet', '--');
+          }
 
-
-      if (out2.success) {
-
-        const s =
-          out2.data;
-
-
-        aqSet(
-          'aq-summary',
-
-          'Summary: ' +
-          s.total_readings +
-          ' readings | SAFE ' +
-          s.safe_count +
-          ' | WARNING ' +
-          s.warning_count +
-          ' | HARMFUL ' +
-          s.harmful_count +
-          ' | Exceedance rate ' +
-          s.exceedance_rate +
-          '%'
-        );
-
+          const badge = document.getElementById('scan-status-badge');
+          if (badge) {
+            if (scan.success) {
+              badge.textContent = scan.action === 'entry' ? 'Entry Granted' : 'Exit Approved';
+              badge.style.background = '#dcfce7';
+              badge.style.color = '#15803d';
+              setTxt('scan-gate', 'Servo Opened (3s)');
+            } else {
+              badge.textContent = scan.status || 'Rejected';
+              badge.style.background = '#fef2f2';
+              badge.style.color = '#b91c1c';
+              setTxt('scan-gate', 'Denied (Closed)');
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Gate poll error:', e);
       }
-
-    } catch (e) {
-
-      console.error(
-        'Air quality summary error:',
-        e
-      );
-
     }
 
-  }
+    // 5. Poll Air Quality & Draw Minimal Chart
+    async function pollAirQuality() {
+      try {
+        const res = await fetch('/api/air-quality/latest?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success || !data.data) return;
 
+        const aq = data.data;
+        setTxt('aq-raw-val', aq.raw_value);
+        setTxt('aq-last-time', aq.timestamp || '');
 
-  /* ============================================================
-     INITIALIZATION
-     ============================================================ */
+        const badge = document.getElementById('aq-badge');
+        const exceed = document.getElementById('aq-exceed-text');
 
-  /*
-   * Start camera display immediately.
-   *
-   * The Flask backend already owns camera 0.
-   * We only request the JPEG frame here.
-   */
-  startFrameLoop();
+        if (aq.alert_level === 'SAFE') {
+          badge.className = 'aq-badge good';
+          badge.textContent = 'Good';
+          if (exceed) exceed.textContent = 'Within safe baseline';
+        } else if (aq.alert_level === 'WARNING') {
+          badge.className = 'aq-badge moderate';
+          badge.textContent = 'Moderate';
+          if (exceed) exceed.textContent = 'Threshold crossed';
+        } else {
+          badge.className = 'aq-badge poor';
+          badge.textContent = 'Poor';
+          if (exceed) exceed.textContent = 'Harmful level detected';
+        }
 
+        // Add to history and redraw chart
+        if (aq.raw_value) {
+          aqHistory.push(Number(aq.raw_value));
+          if (aqHistory.length > 25) aqHistory.shift();
+          drawAirChart();
+        }
+      } catch (e) {
+        console.error('AQ poll error:', e);
+      }
+    }
 
-  /* Parking data refresh */
+    // Minimal 2D Canvas Line Chart (vanilla JS, zero CDN, plain grey/green)
+    function drawAirChart() {
+      const canvas = document.getElementById('aq-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
 
-  setInterval(
-    fetchData,
-    2000
-  );
+      ctx.clearRect(0, 0, w, h);
 
+      // Background lines for safe (300) and warning (400) limits
+      const minVal = 200;
+      const maxVal = 550;
+      const range = maxVal - minVal;
 
-  /* Restore saved slot state */
+      function getY(v) {
+        return h - ((v - minVal) / range) * (h - 16) - 8;
+      }
 
-  initLocalStorage();
+      // Safe limit dotted line (300)
+      ctx.strokeStyle = '#d1d5db';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      const ySafe = getY(300);
+      ctx.moveTo(0, ySafe);
+      ctx.lineTo(w, ySafe);
+      ctx.stroke();
 
+      // Warning limit dotted line (400)
+      ctx.strokeStyle = '#fca5a5';
+      ctx.beginPath();
+      const yWarn = getY(400);
+      ctx.moveTo(0, yWarn);
+      ctx.lineTo(w, yWarn);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-  /* Air quality */
+      if (aqHistory.length < 2) return;
 
-  fetchAirQuality();
+      // Plot air readings
+      ctx.strokeStyle = '#16a34a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
 
+      const step = w / (aqHistory.length - 1);
+      aqHistory.forEach((val, i) => {
+        const x = i * step;
+        const y = Math.max(4, Math.min(h - 4, getY(val)));
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
 
-  setInterval(
-    fetchAirQuality,
-    3000
-  );
+    // 6. Poll Recent Sessions Table
+    async function pollSessions() {
+      try {
+        const res = await fetch('/api/gate/sessions?limit=8&t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const sessions = await res.json();
+        const tbody = document.getElementById('sessions-tbody');
+        if (!tbody) return;
 
-</script>
+        if (!sessions || sessions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="color:#9ca3af; text-align:center; padding:12px;">No sessions logged yet.</td></tr>';
+          return;
+        }
 
+        tbody.innerHTML = sessions.map(s => {
+          const feeTxt = (s.fee !== null && s.fee !== undefined) ? 'Rs. ' + Number(s.fee).toFixed(2) : '--';
+          const statusTxt = s.status || 'ACTIVE';
+          const isParked = statusTxt === 'PARKED' || statusTxt === 'ACTIVE';
+          const color = isParked ? '#15803d' : '#4b5563';
+
+          return `
+            <tr>
+              <td><strong>${s.driver || s.driver_id || '--'}</strong></td>
+              <td>${s.vehicle || '--'}</td>
+              <td>${s.slot_id ? 'Slot ' + s.slot_id : '--'}</td>
+              <td>${s.entrytime || '--'}</td>
+              <td>${s.exittime || '--'}</td>
+              <td><strong>${feeTxt}</strong></td>
+              <td style="color:${color}; font-weight:600;">${statusTxt}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Sessions poll error:', e);
+      }
+    }
+
+    // Manual QR Scan Fallback Submission
+    window.simulateQRScan = async function() {
+      const input = document.getElementById('manual-qr-input');
+      const val = (input.value || '').trim();
+      if (!val) {
+        alert('Please enter a Driver ID or QR string (e.g. D101:MH-02-AB1234)');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/gate/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qr: val })
+        });
+        const out = await res.json();
+        pollGate();
+        pollSessions();
+        pollSlots();
+      } catch (err) {
+        alert('Scan request failed: ' + err.message);
+      }
+    };
+
+    // Initialize all polling timers
+    updateFrame();
+    setInterval(updateFrame, 250); // Frame refresh ~4 FPS for smooth live look
+
+    function pollAll() {
+      pollSlots();
+      pollSystemStatus();
+      pollGate();
+      pollAirQuality();
+      pollSessions();
+    }
+
+    pollAll();
+    setInterval(pollAll, 2000); // 2s auto-refresh
+  </script>
 </body>
 </html>
