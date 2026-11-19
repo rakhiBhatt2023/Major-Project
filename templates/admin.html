@@ -77,13 +77,81 @@
             Calibration captures empty slot baseline pixels from the live camera for differential background subtraction.
           </p>
 
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
             <button class="btn" onclick="calibrateSlots()">Calibrate Empty Slots</button>
             <button class="btn" onclick="reconnectCamera()">Reconnect Camera</button>
             <button class="btn" onclick="stopCamera()">Stop Camera</button>
           </div>
 
-          <div id="cam-action-msg" style="font-size:12px; color:#6b7280; margin-top:10px;"></div>
+          <div style="background:var(--bg-main, #f8fafc); border:1px solid #e2e8f0; border-radius:6px; padding:10px; margin-top:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:12px; font-weight:600;">Live Mean Brightness:</span>
+              <span style="font-size:13px; font-family:monospace; font-weight:700;"><span id="cam-brightness-val">--</span> / 255</span>
+            </div>
+
+            <div id="cam-dark-warning" style="display:none; background:#fef2f2; border-left:4px solid #ef4444; padding:8px 10px; border-radius:4px; font-size:12px; color:#b91c1c; margin-bottom:10px; font-weight:600;">
+              Warning: Camera image too dark (mean brightness &lt; 50). QR scanning and slot detection may fail.
+            </div>
+
+            <div style="font-size:11px; font-weight:600; color:#475569; margin-bottom:6px;">Hardware Controls:</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+              <div>
+                <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Brightness (0-255):</label>
+                <div style="display:flex; gap:4px;">
+                  <input type="number" id="cam-bright-input" value="128" min="0" max="255" style="width:100%; padding:4px 6px; font-size:12px; border:1px solid #cbd5e1; border-radius:4px;">
+                  <button class="btn" style="padding:4px 8px; font-size:11px; white-space:nowrap;" onclick="setCameraHardware('brightness')">Set</button>
+                </div>
+              </div>
+              <div>
+                <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Exposure (-13 to 0):</label>
+                <div style="display:flex; gap:4px;">
+                  <input type="number" id="cam-exp-input" value="-6" min="-13" max="0" style="width:100%; padding:4px 6px; font-size:12px; border:1px solid #cbd5e1; border-radius:4px;">
+                  <button class="btn" style="padding:4px 8px; font-size:11px; white-space:nowrap;" onclick="setCameraHardware('exposure')">Set</button>
+                </div>
+              </div>
+            </div>
+            <button class="btn" style="width:100%; padding:5px; font-size:11px;" onclick="setCameraHardware('auto_exposure')">Reset to Auto Exposure</button>
+          </div>
+
+          <div id="cam-action-msg" style="font-size:12px; color:#6b7280; margin-top:8px;"></div>
+        </div>
+
+      </div>
+
+        <!-- Per-Slot Live Metrics & Hysteresis Tuning -->
+        <div class="card">
+          <div class="card-title">
+            <span>Per-Slot Live Metrics vs Thresholds</span>
+            <span class="card-subtext">Hysteresis &amp; Noise Tuning</span>
+          </div>
+
+          <div id="calib-prompt-box" style="display:none; background:#fef3c7; border-left:4px solid #f59e0b; padding:10px 12px; border-radius:4px; font-size:12px; color:#92400e; margin-bottom:12px;">
+            <div style="font-weight:700;" id="calib-prompt-text">Baseline empty slots reference not calibrated.</div>
+            <div style="margin-top:2px;">Lighting or camera position may have shifted since initial setup.</div>
+            <button class="btn btn-primary" style="margin-top:6px; padding:4px 10px; font-size:11px;" onclick="calibrateSlots()">Calibrate Baseline Now</button>
+          </div>
+
+          <p style="font-size:12px; color:#4b5563; margin-bottom:10px;">
+            <strong>Hysteresis rule:</strong> metric must exceed <em>Occupied Thresh</em> to trigger OCCUPIED, and drop below <em>Free Thresh</em> to return to FREE. Requires ~2s sustained hold to eliminate flicker.
+          </p>
+
+          <div class="table-wrapper">
+            <table class="simple-table" style="font-size:12px; width:100%;">
+              <thead>
+                <tr>
+                  <th>Slot</th>
+                  <th>State</th>
+                  <th>Live Metric</th>
+                  <th>Free Thresh</th>
+                  <th>Occ Thresh</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="slot-tuning-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:10px;">Loading slot diagnostics...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
@@ -99,16 +167,19 @@
           </div>
 
           <p style="font-size:12px; color:#4b5563; margin-bottom:12px;">
-            Tests the servo motor and red/green LEDs on Arduino COM7 without making financial deductions or updating sessions.
+            Tests the servo motor and red/green LEDs on Arduino COM port without making financial deductions or updating sessions.
           </p>
 
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-            <button class="btn" onclick="gtManual('open_entry')">Open Entry Gate</button>
+            <button class="btn btn-primary" onclick="testOpenEntryReply()">Test OPEN_ENTRY (Inspect Reply)</button>
+            <button class="btn" onclick="gtManual('close')">Close Gate (CLOSE_GATE)</button>
             <button class="btn" onclick="gtManual('open_exit')">Open Exit Gate</button>
-            <button class="btn" onclick="gtManual('close')">Close Gate</button>
           </div>
 
-          <div id="gate-action-msg" style="font-size:12px; color:#6b7280;"></div>
+          <div id="gate-action-msg" style="font-size:12px; color:#6b7280; margin-bottom:8px;"></div>
+
+          <!-- Arduino Reply Terminal Box -->
+          <div id="open-entry-terminal" style="display:none; background:#0f172a; color:#22c55e; border-radius:6px; padding:12px; font-family:monospace; font-size:12px; white-space:pre-wrap; border:1px solid #334155;"></div>
         </div>
 
         <!-- Raw Slots API Payload (/api/slots) -->
@@ -277,10 +348,193 @@
       }
     }
 
+    // 7. Live Per-Slot Diagnostics & Hysteresis Tuning
+    async function pollDiagnostics() {
+      try {
+        const res = await fetch('/api/camera/diagnostics?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Mean Brightness & Dark Warning Banner
+        const brightVal = document.getElementById('cam-brightness-val');
+        const darkWarn = document.getElementById('cam-dark-warning');
+        if (brightVal && data.mean_brightness !== undefined) {
+          brightVal.textContent = data.mean_brightness;
+        }
+        if (darkWarn) {
+          darkWarn.style.display = (data.is_too_dark || (data.mean_brightness !== undefined && data.mean_brightness < 50.0)) ? 'block' : 'none';
+        }
+
+        // Calibration Prompt Banner
+        const calibBox = document.getElementById('calib-prompt-box');
+        const calibText = document.getElementById('calib-prompt-text');
+        if (data.calibration && data.calibration.is_stale) {
+          if (calibBox) calibBox.style.display = 'block';
+          if (calibText) calibText.textContent = data.calibration.prompt;
+        } else {
+          if (calibBox) calibBox.style.display = 'none';
+        }
+
+        const tbody = document.getElementById('slot-tuning-tbody');
+        if (!tbody || !data.slots) return;
+
+        // If any threshold input is focused, don't overwrite user's typing
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && activeEl.id && activeEl.id.startsWith('th-');
+
+        const slots = ['A1', 'A2', 'B1', 'B2'];
+        slots.forEach(sid => {
+          const s = data.slots[sid] || {};
+          const m = s.metrics || {};
+          const isOcc = s.status === 'OCCUPIED';
+          const badgeBg = isOcc ? '#fee2e2' : '#f0fdf4';
+          const badgeColor = isOcc ? '#b91c1c' : '#15803d';
+          const metricVal = m.raw_metric !== undefined ? m.raw_metric : (m.diff_count || m.edge_count || 0);
+
+          let row = document.getElementById('tuning-row-' + sid);
+          if (!row) {
+            row = document.createElement('tr');
+            row.id = 'tuning-row-' + sid;
+            tbody.appendChild(row);
+          }
+
+          const freeInputVal = (isTyping && activeEl.id === 'th-free-' + sid) ? activeEl.value : s.free_threshold;
+          const occInputVal = (isTyping && activeEl.id === 'th-occ-' + sid) ? activeEl.value : s.occupied_threshold;
+
+          row.innerHTML = `
+            <td><strong>Slot ${sid}</strong></td>
+            <td><span class="slot-badge" style="background:${badgeBg}; color:${badgeColor};">${s.status}</span></td>
+            <td class="mono"><strong>${metricVal}</strong> <span style="font-size:10px; color:#6b7280;">(Diff: ${m.diff_count || 0}, Mean: ${m.mean_diff || 0})</span></td>
+            <td><input type="number" id="th-free-${sid}" value="${freeInputVal}" style="width:75px; padding:3px 6px; font-size:12px; border:1px solid #d1d5db; border-radius:4px;"></td>
+            <td><input type="number" id="th-occ-${sid}" value="${occInputVal}" style="width:75px; padding:3px 6px; font-size:12px; border:1px solid #d1d5db; border-radius:4px;"></td>
+            <td><button class="btn" style="padding:3px 8px; font-size:11px;" onclick="saveThreshold('${sid}')">Save</button></td>
+          `;
+        });
+
+      } catch (e) {
+        console.error('Diagnostics error:', e);
+      }
+    }
+
+    async function saveThreshold(slotId) {
+      const freeEl = document.getElementById('th-free-' + slotId);
+      const occEl = document.getElementById('th-occ-' + slotId);
+      if (!freeEl || !occEl) return;
+      const freeVal = parseInt(freeEl.value);
+      const occVal = parseInt(occEl.value);
+
+      if (freeVal >= occVal) {
+        alert('Free threshold (' + freeVal + ') must be lower than Occupied threshold (' + occVal + ') for hysteresis!');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/camera/thresholds', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            slot_id: slotId,
+            free_threshold: freeVal,
+            occupied_threshold: occVal
+          })
+        });
+        const out = await res.json();
+        if (out.status === 'ok') {
+          pollDiagnostics();
+          alert('Slot ' + slotId + ' hysteresis thresholds updated successfully.');
+        } else {
+          alert('Save failed: ' + (out.message || 'unknown error'));
+        }
+      } catch (e) {
+        alert('Error saving thresholds: ' + e.message);
+      }
+    }
+
+    async function setCameraHardware(type) {
+      const msg = document.getElementById('cam-action-msg');
+      let payload = {};
+      if (type === 'brightness') {
+        const val = document.getElementById('cam-bright-input').value;
+        payload.brightness = parseFloat(val);
+      } else if (type === 'exposure') {
+        const val = document.getElementById('cam-exp-input').value;
+        payload.exposure = parseFloat(val);
+      } else if (type === 'auto_exposure') {
+        payload.auto_exposure = true;
+      }
+      msg.textContent = 'Updating camera hardware...';
+      try {
+        const res = await fetch('/api/camera/hardware', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        if (out.status === 'ok') {
+          msg.textContent = 'Hardware settings updated (mean brightness: ' + out.mean_brightness + ')';
+          pollDiagnostics();
+        } else {
+          msg.textContent = 'Hardware update failed: ' + (out.result || 'error');
+        }
+      } catch (e) {
+        msg.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    // 8. Test OPEN_ENTRY and Inspect Exact Command & Arduino Reply
+    async function testOpenEntryReply() {
+      const term = document.getElementById('open-entry-terminal');
+      const msg = document.getElementById('gate-action-msg');
+      term.style.display = 'block';
+      term.textContent = '[TEST] Sending OPEN_ENTRY to Arduino...\nAwaiting serial response (9600 baud)...';
+      msg.textContent = 'Command in progress...';
+
+      try {
+        const res = await fetch('/api/gate/test_open_entry', { method: 'POST' });
+        const out = await res.json();
+
+        let termText = '========================================\n';
+        termText += 'HARDWARE COMMAND TEST: OPEN_ENTRY\n';
+        termText += '========================================\n';
+        termText += 'Command Sent:       ' + out.command + '\n';
+        termText += 'Arduino Port:       ' + out.port + (out.connected ? ' [ONLINE]' : ' [SIMULATED]') + '\n';
+        termText += 'Commanded Angle:    ' + out.angle + ' degrees\n';
+        termText += 'Gate Duration:      ' + out.duration + '\n';
+        termText += 'Arduino Reply Lines:\n';
+        if (out.replies && out.replies.length > 0) {
+          out.replies.forEach(r => {
+            termText += '  <- ' + r + '\n';
+          });
+        } else {
+          termText += '  <- (No reply received within 1.5s)\n';
+        }
+        termText += '========================================\n';
+        termText += 'Result: ' + (out.success ? 'PASSED (Serial handshake completed)' : 'FAILED: ' + out.error);
+
+        term.textContent = termText;
+        msg.textContent = out.message || 'Executed.';
+      } catch (e) {
+        term.textContent = 'Test failed: ' + e.message;
+        msg.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    // Theme restoration
+    (function() {
+      const saved = localStorage.getItem('theme') || 'dark';
+      if (saved === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    })();
+
     // Initial load & periodic refresh
     fetchDemoStatus();
     fetchSlots();
+    pollDiagnostics();
     setInterval(fetchSlots, 2000);
+    setInterval(pollDiagnostics, 1500);
   </script>
 </body>
 </html>

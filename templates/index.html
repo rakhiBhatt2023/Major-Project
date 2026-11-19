@@ -10,11 +10,11 @@
 
   <div class="container">
 
-    <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+    <!-- ── 1. HEADER ──────────────────────────────────────────────────────────── -->
     <header class="header">
       <div class="header-left">
         <h1 class="header-title">SmartPark AI</h1>
-        <span class="header-sub">AI &amp; IoT Enabled Sustainable Smart Parking System</span>
+        <span class="header-sub">AI &amp; IoT Sustainable Parking</span>
         <span id="demo-mode-badge" class="demo-badge" style="display:none;">DEMO MODE</span>
       </div>
 
@@ -28,135 +28,258 @@
         <div class="status-label">
           Gas sensor: <span id="hdr-gas" class="status-val disconnected">Disconnected</span>
         </div>
-        <span style="color:#d1d5db;">|</span>
-        <span id="last-updated" style="color:#6b7280; font-size:11px;">Last updated: --</span>
+        <span style="color:var(--border);">|</span>
+        <span id="live-clock" class="mono" style="color:var(--text-secondary); font-weight:600;">--:--:--</span>
+        <button class="btn-theme-toggle" onclick="toggleTheme()" title="Switch Light/Dark Theme">Theme</button>
         <a href="/admin" class="nav-link">Admin</a>
       </div>
     </header>
 
-    <!-- ── MAIN TWO-COLUMN SECTION ─────────────────────────────────────────── -->
-    <main class="main-grid">
+    <!-- ── 2. KPI STRIP ───────────────────────────────────────────────────────── -->
+    <section class="kpi-strip">
+      <div class="kpi-card">
+        <div class="kpi-label">Free Slots</div>
+        <div class="kpi-value green" id="kpi-free">--</div>
+        <div class="kpi-sub" id="kpi-free-sub">of 4 total slots</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Occupied</div>
+        <div class="kpi-value" id="kpi-occupied">--</div>
+        <div class="kpi-sub">active parking bays</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Active Sessions</div>
+        <div class="kpi-value amber" id="kpi-active">--</div>
+        <div class="kpi-sub">vehicles parked</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Collected Today</div>
+        <div class="kpi-value" id="kpi-revenue">Rs. 0.00</div>
+        <div class="kpi-sub">total fee revenue</div>
+      </div>
+    </section>
 
-      <!-- LEFT: CAMERA FEED & 2x2 VISUAL LOT MAP -->
-      <section>
-        <div class="card">
-          <div class="card-title">
-            <span>Camera Stream</span>
-            <span id="cam-status-text" class="card-subtext">Live Detection</span>
+    <!-- ── 3. GATE TRANSACTION STEPPER ────────────────────────────────────────── -->
+    <section class="stepper-card">
+      <div class="stepper-header">
+        <span class="stepper-title" id="stepper-title-text">Gate Transaction Stepper [ENTRY]</span>
+        <span id="stepper-status-badge" class="stepper-status-badge idle">Ready</span>
+      </div>
+
+      <!-- Plain Text Failure Reason Banner -->
+      <div id="stepper-failure-banner" style="display:none; background:#fee2e2; border-left:4px solid #ef4444; color:#991b1b; padding:8px 14px; border-radius:4px; font-size:13px; font-weight:600; margin:10px 0 6px 0;"></div>
+
+      <div class="stepper-flow" id="stepper-flow">
+        <!-- Step 1: Vehicle at gate -->
+        <div class="step-node" id="step-1">
+          <div class="step-head">
+            <span class="step-indicator" id="step-ind-1">1</span>
+            <span class="step-name" id="step-name-1">Vehicle at gate</span>
           </div>
+          <div class="step-desc" id="step-desc-1">Waiting for vehicle at gate</div>
+        </div>
 
-          <div class="camera-container">
-            <img
-              id="camera-view"
-              class="camera-img"
-              src="/api/frame"
-              alt="Live parking camera feed"
-              onerror="this.style.display='none'; document.getElementById('camera-fallback').style.display='block';">
-            <div id="camera-fallback" style="display:none; color:#9ca3af; padding:40px; text-align:center; font-size:13px;">
-              Camera feed unavailable or stopped.<br>
-              <span style="font-size:11px; color:#6b7280;">Backend capture thread is polling device 0.</span>
-            </div>
+        <!-- Step 2: QR scanned -->
+        <div class="step-node" id="step-2">
+          <div class="step-head">
+            <span class="step-indicator" id="step-ind-2">2</span>
+            <span class="step-name" id="step-name-2">QR scanned</span>
           </div>
+          <div class="step-desc" id="step-desc-2">Awaiting QR scan</div>
+        </div>
 
-          <!-- 2x2 Parking Lot Map -->
-          <div class="lot-map-wrapper">
-            <div class="gate-marker">Gate Entry (Distance baseline: 0m)</div>
+        <!-- Step 3: Driver verified -->
+        <div class="step-node" id="step-3">
+          <div class="step-head">
+            <span class="step-indicator" id="step-ind-3">3</span>
+            <span class="step-name" id="step-name-3">Driver verified</span>
+          </div>
+          <div class="step-desc" id="step-desc-3">Awaiting driver check</div>
+        </div>
 
-            <div class="slots-grid-2x2" id="slots-grid">
-              <!-- Rendered dynamically: Slots A1, A2, B1, B2 -->
-              <div class="slot-tile vacant" id="tile-A1">
-                <div class="slot-header"><span class="slot-name">Slot A1</span><span class="slot-badge">Loading</span></div>
-                <div class="slot-details"><span>Dist: 5.0m</span><span>Cong: 0</span></div>
-              </div>
-              <div class="slot-tile vacant" id="tile-A2">
-                <div class="slot-header"><span class="slot-name">Slot A2</span><span class="slot-badge">Loading</span></div>
-                <div class="slot-details"><span>Dist: 7.0m</span><span>Cong: 0</span></div>
-              </div>
-              <div class="slot-tile vacant" id="tile-B1">
-                <div class="slot-header"><span class="slot-name">Slot B1</span><span class="slot-badge">Loading</span></div>
-                <div class="slot-details"><span>Dist: 8.0m</span><span>Cong: 0</span></div>
-              </div>
-              <div class="slot-tile vacant" id="tile-B2">
-                <div class="slot-header"><span class="slot-name">Slot B2</span><span class="slot-badge">Loading</span></div>
-                <div class="slot-details"><span>Dist: 10.0m</span><span>Cong: 0</span></div>
-              </div>
-            </div>
+        <!-- Step 4: Fee deducted / calculated -->
+        <div class="step-node" id="step-4">
+          <div class="step-head">
+            <span class="step-indicator" id="step-ind-4">4</span>
+            <span class="step-name" id="step-name-4">Fee deducted</span>
+          </div>
+          <div class="step-desc" id="step-desc-4">Entry fee check (Rs. 10.00)</div>
+        </div>
+
+        <!-- Step 5: Slot recommended / released -->
+        <div class="step-node" id="step-5">
+          <div class="step-head">
+            <span class="step-indicator" id="step-ind-5">5</span>
+            <span class="step-name" id="step-name-5">Slot recommended</span>
+          </div>
+          <div class="step-desc" id="step-desc-5">AI green score allocation</div>
+        </div>
+
+        <!-- Step 6: Gate open -->
+        <div class="step-node" id="step-6">
+          <div class="step-head">
+            <span class="step-indicator" id="step-ind-6">6</span>
+            <span class="step-name" id="step-name-6">Gate open</span>
+          </div>
+          <div class="step-desc" id="step-desc-6">Servo barrier gate</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 3B. LAST TRANSACTION CARD (VISIBLE PAYMENT RESULT) ────────────────── -->
+    <section class="card" id="last-tx-card" style="margin-bottom:14px; border-left:4px solid var(--accent, #3b82f6);">
+      <div class="card-title-bar" style="margin-bottom:8px;">
+        <span class="card-title">Last Transaction</span>
+        <span id="last-tx-badge" class="slot-badge" style="background:#e5e7eb; color:#374151;">Awaiting Scan</span>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:12px; font-size:13px;">
+        <div>
+          <span style="font-size:11px; color:var(--text-muted); display:block;">Driver</span>
+          <strong id="tx-driver">--</strong>
+        </div>
+        <div>
+          <span style="font-size:11px; color:var(--text-muted); display:block;">Action</span>
+          <strong id="tx-action">--</strong>
+        </div>
+        <div>
+          <span style="font-size:11px; color:var(--text-muted); display:block;">Slot</span>
+          <strong id="tx-slot">--</strong>
+        </div>
+        <div>
+          <span style="font-size:11px; color:var(--text-muted); display:block;">Fee Charged</span>
+          <strong id="tx-fee" style="color:var(--green-text);">--</strong>
+        </div>
+        <div>
+          <span style="font-size:11px; color:var(--text-muted); display:block;">Wallet Balance</span>
+          <strong id="tx-wallet" class="mono">--</strong>
+        </div>
+        <div>
+          <span style="font-size:11px; color:var(--text-muted); display:block;">Time</span>
+          <span id="tx-time" class="mono" style="color:var(--text-secondary);">--</span>
+        </div>
+      </div>
+      <div id="tx-plain-reason" style="display:none; margin-top:8px; font-size:12px; color:#b91c1c; font-weight:600; padding:4px 8px; background:#fee2e2; border-radius:4px;"></div>
+    </section>
+
+    <!-- ── 4. MAIN ROW: CAMERA & 2x2 MAP ─────────────────────────────────────── -->
+    <main class="main-row">
+
+      <!-- LEFT: CAMERA FEED & MODE SWITCHING -->
+      <section class="card">
+        <div class="card-title-bar">
+          <span class="card-title">Live Vision Stream</span>
+          <span class="card-subtext" id="cam-subtext">Backend capture thread (device 0)</span>
+        </div>
+
+        <!-- Camera Mode Bar with Direction Control -->
+        <div class="camera-mode-bar">
+          <div class="mode-btn-group">
+            <button id="btn-mode-slot" class="mode-btn active" onclick="setCameraMode('SLOT_DETECTION')">Slot Detection</button>
+            <button id="btn-mode-qr" class="mode-btn" onclick="setCameraMode('QR_SCAN')">QR Scan</button>
+            <button id="btn-dir-entry" class="mode-btn dir-btn active" onclick="setGateDirection('ENTRY')">Entry Gate</button>
+            <button id="btn-dir-exit" class="mode-btn dir-btn" onclick="setGateDirection('EXIT')">Exit Gate</button>
+          </div>
+          <div class="mode-meta" id="mode-meta-text">
+            Mode: <strong id="current-mode-label">Slot Detection</strong> | Gate: <strong id="current-gate-direction-label" style="color:var(--blue-text);">ENTRY</strong> | Last: <span id="last-mode-change-time">--:--:--</span>
+          </div>
+        </div>
+
+        <!-- Scan Banner (Highlighted when in QR mode or car at gate) -->
+        <div id="scan-banner" class="scan-banner" style="display:none;">
+          Vehicle at gate - show your QR code
+        </div>
+
+        <!-- Camera Feed Display -->
+        <div class="camera-wrapper">
+          <img
+            id="camera-view"
+            class="camera-img"
+            src="/api/frame"
+            alt="Live parking camera view"
+            onerror="this.style.display='none'; document.getElementById('camera-fallback').style.display='block';">
+          <div id="camera-fallback" class="camera-fallback" style="display:none;">
+            Camera feed offline or stopped.<br>
+            <span style="font-size:10px; color:var(--text-muted);">Polling frame endpoint /api/frame</span>
+          </div>
+        </div>
+
+        <!-- Manual QR Fallback Simulator (Labelled Backup) -->
+        <div class="sim-box">
+          <div class="sim-label">Manual QR Fallback (Testing Backup):</div>
+          <div class="sim-row">
+            <input type="text" id="manual-qr-input" class="input-text mono" placeholder="e.g. a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf62 or driver ID">
+            <button class="btn btn-primary" onclick="simulateQRScan()">Simulate Scan</button>
+          </div>
+          <div class="sim-quick-links">
+            <button class="btn-quick" onclick="fillQuickQR('a1b8fb4d-753b-4a12-a95d-d6c3ebc7bf62')">MAX (8743)</button>
+            <button class="btn-quick" onclick="fillQuickQR('7f34af0a-c890-4d03-bc72-8e1c22d10835')">CHARLES (9583)</button>
+            <button class="btn-quick" onclick="fillQuickQR('ff75af4b-370e-4ebd-afc0-556543c9674c')">LEWIS (89438)</button>
+            <button class="btn-quick" onclick="fillQuickQR('UNREGISTERED-XYZ')">Invalid QR</button>
+            <button class="btn-quick" style="color:var(--green-text);" onclick="triggerSimulatedIR('IR_ENTRY')">IR Entry Gate</button>
+            <button class="btn-quick" style="color:var(--amber-text);" onclick="triggerSimulatedIR('IR_EXIT')">IR Exit Gate</button>
           </div>
         </div>
       </section>
 
-      <!-- RIGHT: ENTRY / EXIT & AI RECOMMENDATION -->
-      <section>
+      <!-- RIGHT: 2x2 PARKING LOT MAP & SLOT DETAILS INSPECTOR -->
+      <section class="card">
+        <div class="card-title-bar">
+          <span class="card-title">2x2 Slot Allocation Map</span>
+          <span class="card-subtext">Click any slot for live details</span>
+        </div>
 
-        <!-- Entry / Exit Panel -->
-        <div class="card">
-          <div class="card-title">
-            <span>Entry &amp; Exit Verification</span>
-            <span id="scan-status-badge" class="slot-badge" style="background:#e5e7eb; color:#374151;">Awaiting Scan</span>
-          </div>
+        <div class="gate-indicator">ENTRY GATE (Distance baseline: 0.0m)</div>
 
-          <div class="data-row">
-            <span class="data-label">Last Scanned QR</span>
-            <span class="data-value" id="scan-qr" style="font-family:monospace; font-size:11px;">--</span>
+        <!-- 2x2 Slots Grid -->
+        <div class="slots-grid-2x2" id="slots-grid">
+          <div class="slot-tile vacant" id="tile-A1" onclick="selectSlot('A1')">
+            <div class="slot-header"><span class="slot-name">Slot A1</span><span class="slot-badge">Loading</span></div>
+            <div class="slot-metrics"><span>Dist: 5.0m</span><span>Cong: 0</span></div>
           </div>
-          <div class="data-row">
-            <span class="data-label">Driver / Vehicle</span>
-            <span class="data-value" id="scan-driver">--</span>
+          <div class="slot-tile vacant" id="tile-A2" onclick="selectSlot('A2')">
+            <div class="slot-header"><span class="slot-name">Slot A2</span><span class="slot-badge">Loading</span></div>
+            <div class="slot-metrics"><span>Dist: 7.0m</span><span>Cong: 0</span></div>
           </div>
-          <div class="data-row">
-            <span class="data-label">Action</span>
-            <span class="data-value" id="scan-action">--</span>
+          <div class="slot-tile vacant" id="tile-B1" onclick="selectSlot('B1')">
+            <div class="slot-header"><span class="slot-name">Slot B1</span><span class="slot-badge">Loading</span></div>
+            <div class="slot-metrics"><span>Dist: 8.0m</span><span>Cong: 0</span></div>
           </div>
-          <div class="data-row">
-            <span class="data-label">Assigned Slot</span>
-            <span class="data-value" id="scan-slot" style="color:var(--green-text); font-weight:700;">--</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Time Parked</span>
-            <span class="data-value" id="scan-duration">--</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Fee Charged</span>
-            <span class="data-value" id="scan-fee">--</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Wallet Balance</span>
-            <span class="data-value" id="scan-wallet">--</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Gate Servo Status</span>
-            <span class="data-value" id="scan-gate">Closed</span>
-          </div>
-
-          <!-- Plain Words Fee Formula -->
-          <div class="formula-box">
-            <strong>Fee Formula:</strong> max(Rs. 10, (minutes - 5) &times; Rs. 2)<br>
-            Base fee of Rs. 10 covers the first 5 minutes of parking; thereafter Rs. 2 per started minute is added.
-          </div>
-
-          <!-- Manual Fallback QR Simulator -->
-          <div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border);">
-            <div style="font-size:12px; font-weight:600; margin-bottom:6px; color:#4b5563;">Manual QR Fallback:</div>
-            <div style="display:flex; gap:8px;">
-              <input type="text" id="manual-qr-input" class="input-text" placeholder="e.g. D101:MH-02-AB1234 or Driver ID" style="flex:1;">
-              <button class="btn btn-primary" onclick="simulateQRScan()">Simulate Scan</button>
-            </div>
+          <div class="slot-tile vacant" id="tile-B2" onclick="selectSlot('B2')">
+            <div class="slot-header"><span class="slot-name">Slot B2</span><span class="slot-badge">Loading</span></div>
+            <div class="slot-metrics"><span>Dist: 10.0m</span><span>Cong: 0</span></div>
           </div>
         </div>
 
-        <!-- AI Green Slot Recommendation & Sustainability -->
-        <div class="card">
-          <div class="card-title">
-            <span>AI Slot Recommendation</span>
-            <span class="card-subtext">Green Parking Score</span>
-          </div>
+        <!-- Map Legend -->
+        <div class="lot-legend">
+          <span class="legend-item"><span class="legend-dot vacant"></span> FREE (Green)</span>
+          <span class="legend-item"><span class="legend-dot assigned"></span> ASSIGNED - waiting for car (Amber)</span>
+          <span class="legend-item"><span class="legend-dot occupied"></span> OCCUPIED (Red)</span>
+          <span class="legend-item" style="color:var(--green-text); font-weight:600;">[AI Best] Recommended</span>
+        </div>
 
-          <div class="why-box" id="why-box">
-            <div class="why-score-line" id="rec-header">Recommended Slot: <span id="rec-slot-id">--</span></div>
-            <div id="rec-math">Distance: -- m | Congestion: -- cars | Green Score: --</div>
-            <div style="margin-top:4px;" id="rec-savings">Estimated distance saved vs first-free slot: -- m</div>
-            <div class="why-assumption" id="rec-emissions">
-              Estimated emissions saved: -- g CO2 (assumption: passenger vehicle idle &amp; low-speed maneuvering emission factor of 120 g CO2/km).
+        <!-- Slot Details Inspector (Shown on Slot Click) -->
+        <div class="slot-inspector" id="slot-inspector">
+          <div class="inspector-header">
+            <span>Inspector: <strong id="insp-slot-title">Slot A1</strong></span>
+            <span id="insp-slot-badge" class="slot-badge" style="background:var(--green-bg); color:var(--green-text);">Vacant</span>
+          </div>
+          <div class="inspector-grid">
+            <div class="inspector-row">
+              <span class="insp-label">Driver / Vehicle</span>
+              <span class="insp-val" id="insp-driver">None (Vacant)</span>
+            </div>
+            <div class="inspector-row">
+              <span class="insp-label">Parked Duration</span>
+              <span class="insp-val mono" id="insp-duration">N/A</span>
+            </div>
+            <div class="inspector-row">
+              <span class="insp-label">Distance to Gate</span>
+              <span class="insp-val mono" id="insp-distance">5.0 m</span>
+            </div>
+            <div class="inspector-row">
+              <span class="insp-label">Local Congestion</span>
+              <span class="insp-val mono" id="insp-congestion">0 cars (LOW)</span>
             </div>
           </div>
         </div>
@@ -165,38 +288,73 @@
 
     </main>
 
-    <!-- ── BOTTOM SECTION: AIR QUALITY & RECENT SESSIONS ──────────────────── -->
-    <section class="bottom-grid">
+    <!-- ── 5. LOWER SECTION: 4 CARDS GRID ────────────────────────────────────── -->
+    <section class="lower-grid">
 
-      <!-- Air Quality Card (MQ-135) -->
+      <!-- CARD 1: "Why This Slot" (AI Recommendation & Green Parking Score) -->
       <div class="card">
-        <div class="card-title">
-          <span>Air Quality Monitor (MQ-135)</span>
-          <span class="card-subtext" id="aq-last-time">--</span>
+        <div class="card-title-bar">
+          <span class="card-title">Why This Slot</span>
+          <span class="card-subtext">Green Parking Score</span>
+        </div>
+
+        <div class="why-box">
+          <div class="why-score-line" id="rec-header">Recommended Slot: <span id="rec-slot-id">--</span></div>
+          <div class="why-metric-row mono" id="rec-math">
+            Distance: --m | Congestion: -- cars | Green Score: --
+          </div>
+          <div style="font-weight:600; color:var(--text-primary); margin-bottom:4px;" id="rec-savings">
+            Estimated distance saved vs first-available: -- m
+          </div>
+          <div style="color:var(--green-text); font-weight:600;" id="rec-co2">
+            Estimated emissions saved: -- g CO2
+          </div>
+          <div class="why-assumption" id="rec-emissions-note">
+            Assumption: passenger vehicle idle &amp; low-speed maneuvering emission factor of 120 g CO2/km (0.12 g/m).
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 2: Air Quality Card (MQ-135) -->
+      <div class="card">
+        <div class="card-title-bar">
+          <span class="card-title">Air Quality Monitor (MQ-135)</span>
+          <span class="card-subtext mono" id="aq-last-time">--</span>
         </div>
 
         <div class="aq-summary-row">
-          <div class="aq-metric" id="aq-raw-val">--</div>
+          <div class="aq-metric mono" id="aq-raw-val">--</div>
           <span class="aq-badge good" id="aq-badge">Good</span>
-          <span style="font-size:12px; color:#6b7280;" id="aq-exceed-text">Within limits</span>
+          <span style="font-size:11px; color:var(--text-muted);" id="aq-exceed-text">Within limits</span>
         </div>
 
-        <p style="font-size:11px; color:#6b7280; line-height:1.4;">
+        <div class="aq-note">
           Relative index; MQ-135 sensor requires ~3 minutes to stabilise after power-on.
-        </p>
+        </div>
 
-        <!-- Canvas Line Chart -->
-        <canvas id="aq-chart" class="aq-chart-canvas" width="460" height="90"></canvas>
+        <canvas id="aq-chart" class="aq-chart-canvas" width="480" height="60"></canvas>
       </div>
 
-      <!-- Recent Sessions Table -->
+      <!-- CARD 3: Live Activity Feed (Last 15 timestamped events) -->
       <div class="card">
-        <div class="card-title">
-          <span>Recent Sessions</span>
+        <div class="card-title-bar">
+          <span class="card-title">Live Activity Feed</span>
+          <span class="card-subtext">Last 15 Events</span>
+        </div>
+
+        <div class="activity-feed-list" id="activity-feed-list">
+          <div class="feed-item" style="color:var(--text-muted); justify-content:center;">Loading activity log...</div>
+        </div>
+      </div>
+
+      <!-- CARD 4: Recent Sessions Table & Fee Formula -->
+      <div class="card">
+        <div class="card-title-bar">
+          <span class="card-title">Recent Sessions</span>
           <span class="card-subtext">Newest First</span>
         </div>
 
-        <div style="overflow-x:auto;">
+        <div class="table-wrapper">
           <table class="simple-table">
             <thead>
               <tr>
@@ -210,9 +368,14 @@
               </tr>
             </thead>
             <tbody id="sessions-tbody">
-              <tr><td colspan="7" style="color:#9ca3af; text-align:center; padding:16px;">Loading sessions...</td></tr>
+              <tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:10px;">Loading sessions...</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Plain words fee formula displayed next to fee -->
+        <div class="fee-formula-note">
+          <strong>Fee Formula:</strong> max(Rs. 10, (minutes - 5) &times; Rs. 2). Base fee of Rs. 10 covers first 5 min; Rs. 2 per started minute is added thereafter.
         </div>
       </div>
 
@@ -220,7 +383,7 @@
 
   </div>
 
-  <!-- ── JAVASCRIPT LOGIC ────────────────────────────────────────────────── -->
+  <!-- ── 6. JAVASCRIPT CONTROLLER ───────────────────────────────────────────── -->
   <script>
     const MAX_DISTANCE = 10.0;
     const MAX_CONGESTION = 2;
@@ -229,6 +392,8 @@
     const EMISSION_FACTOR_G_PER_M = 0.120; // 120 g CO2 / km = 0.12 g CO2 / m
 
     let aqHistory = [];
+    let currentFeed = {};
+    let selectedSlotId = 'A1';
 
     // Helper: update text content safely
     function setTxt(id, txt) {
@@ -236,31 +401,221 @@
       if (el) el.textContent = (txt === null || txt === undefined || txt === '') ? '--' : txt;
     }
 
-    // 1. Camera Frame Polling
-    function updateFrame() {
-      const img = document.getElementById('camera-view');
-      const fallback = document.getElementById('camera-fallback');
-      if (img) {
-        img.src = '/api/frame?t=' + Date.now();
-        img.onload = () => { img.style.display = 'block'; if (fallback) fallback.style.display = 'none'; };
-        img.onerror = () => { img.style.display = 'none'; if (fallback) fallback.style.display = 'block'; };
+    // 1. Theme Management
+    function initTheme() {
+      const saved = localStorage.getItem('theme') || 'dark';
+      if (saved === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
       }
     }
 
-    // 2. Poll Slots & AI Recommendation
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme');
+      if (current === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('theme', 'light');
+      }
+      drawAirChart();
+    }
+
+    initTheme();
+
+    // 2. Live Clock
+    function updateClock() {
+      const now = new Date();
+      setTxt('live-clock', now.toLocaleTimeString('en-GB'));
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // 3. Camera Frame Polling (Sequential non-aborting loader)
+    let frameLoading = false;
+    let frameFailures = 0;
+    function loadNextFrame() {
+      if (frameLoading) return;
+      frameLoading = true;
+      const nextImg = new Image();
+      nextImg.onload = () => {
+        const img = document.getElementById('camera-view');
+        const fallback = document.getElementById('camera-fallback');
+        if (img) {
+          img.src = nextImg.src;
+          img.style.display = 'block';
+        }
+        if (fallback) fallback.style.display = 'none';
+        frameFailures = 0;
+        frameLoading = false;
+        setTimeout(loadNextFrame, 150);
+      };
+      nextImg.onerror = () => {
+        frameFailures++;
+        if (frameFailures >= 3) {
+          const img = document.getElementById('camera-view');
+          const fallback = document.getElementById('camera-fallback');
+          if (img) img.style.display = 'none';
+          if (fallback) fallback.style.display = 'block';
+        }
+        frameLoading = false;
+        setTimeout(loadNextFrame, 400);
+      };
+      nextImg.src = '/api/frame?t=' + Date.now();
+    }
+    loadNextFrame();
+
+    // 4. Camera Mode & Direction Switching
+    let currentGateDirection = 'ENTRY';
+    async function setGateDirection(dir) {
+      currentGateDirection = (dir || 'ENTRY').toUpperCase();
+      updateDirectionUI(currentGateDirection);
+      try {
+        const res = await fetch('/api/gate/direction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: currentGateDirection })
+        });
+        const data = await res.json();
+        if (data.stepper_title) {
+          setTxt('stepper-title-text', data.stepper_title);
+        }
+        pollStepper();
+      } catch (err) {
+        console.error('Failed to set gate direction:', err);
+      }
+    }
+
+    function updateDirectionUI(dir) {
+      currentGateDirection = dir;
+      const btnEntry = document.getElementById('btn-dir-entry');
+      const btnExit = document.getElementById('btn-dir-exit');
+      const lblDir = document.getElementById('current-gate-direction-label');
+      if (btnEntry) btnEntry.className = (dir === 'ENTRY') ? 'mode-btn dir-btn active' : 'mode-btn dir-btn';
+      if (btnExit) btnExit.className = (dir === 'EXIT') ? 'mode-btn dir-btn active' : 'mode-btn dir-btn';
+      if (lblDir) lblDir.textContent = dir;
+    }
+
+    async function setCameraMode(mode) {
+      try {
+        const res = await fetch('/api/camera/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode, reason: 'Manual button click' })
+        });
+        const data = await res.json();
+        updateCameraModeUI(data);
+      } catch (err) {
+        console.error('Failed to set camera mode:', err);
+      }
+    }
+
+    function updateCameraModeUI(info) {
+      if (!info) return;
+      const isQr = info.mode === 'QR_SCAN';
+
+      const btnSlot = document.getElementById('btn-mode-slot');
+      const btnQr = document.getElementById('btn-mode-qr');
+      const lblMode = document.getElementById('current-mode-label');
+      const lblTime = document.getElementById('last-mode-change-time');
+      const banner = document.getElementById('scan-banner');
+
+      if (btnSlot) btnSlot.className = isQr ? 'mode-btn' : 'mode-btn active';
+      if (btnQr) btnQr.className = isQr ? 'mode-btn active' : 'mode-btn';
+      if (lblMode) lblMode.textContent = isQr ? 'QR Scan' : 'Slot Detection';
+      if (lblTime && info.last_mode_change) lblTime.textContent = info.last_mode_change;
+
+      if (banner) {
+        if (isQr) {
+          banner.style.display = 'block';
+          banner.textContent = info.banner || 'Vehicle at gate - show your QR code';
+        } else {
+          banner.style.display = 'none';
+        }
+      }
+    }
+
+    // 5. Poll Slots, Recommendation & KPIs
     async function pollSlots() {
       try {
         const res = await fetch('/api/slots?t=' + Date.now(), { cache: 'no-store' });
         if (!res.ok) return;
         const feed = await res.json();
+        currentFeed = feed;
 
-        // Render 2x2 Slots Grid
         renderSlotsGrid(feed);
-
-        // Fetch AI recommendation
+        updateInspector(selectedSlotId);
         pollRecommendation(feed);
       } catch (err) {
         console.error('Slots error:', err);
+      }
+    }
+
+    function selectSlot(slotId) {
+      selectedSlotId = slotId;
+      document.querySelectorAll('.slot-tile').forEach(t => t.classList.remove('selected'));
+      const tile = document.getElementById('tile-' + slotId);
+      if (tile) tile.classList.add('selected');
+      updateInspector(slotId);
+    }
+
+    function updateInspector(slotId) {
+      const data = currentFeed[slotId];
+      setTxt('insp-slot-title', 'Slot ' + slotId);
+      const badge = document.getElementById('insp-slot-badge');
+
+      if (!data) {
+        if (badge) { badge.textContent = 'Offline'; badge.style.background = 'var(--border)'; badge.style.color = 'var(--text-muted)'; }
+        setTxt('insp-driver', 'No data');
+        setTxt('insp-duration', '--');
+        setTxt('insp-distance', '--');
+        setTxt('insp-congestion', '--');
+        return;
+      }
+
+      setTxt('insp-distance', data.distance ? data.distance + ' m' : '--');
+      setTxt('insp-congestion', (data.congestion !== undefined ? data.congestion : 0) + ' cars (' + (data.congestion_level || 'LOW') + ')');
+
+      const isFree = (data.status === 'FREE' || data.vacant === true);
+      const isAssigned = (data.status === 'ASSIGNED');
+      const isOccupied = (data.status === 'OCCUPIED');
+
+      if (badge) {
+        if (isOccupied) {
+          badge.textContent = 'Occupied';
+          badge.style.background = 'var(--red-bg)';
+          badge.style.color = 'var(--red-text)';
+        } else if (isAssigned) {
+          badge.textContent = 'Assigned';
+          badge.style.background = 'var(--amber-bg)';
+          badge.style.color = 'var(--amber-text)';
+        } else if (isFree) {
+          badge.textContent = 'Free';
+          badge.style.background = 'var(--green-bg)';
+          badge.style.color = 'var(--green-text)';
+        } else {
+          badge.textContent = data.status || 'Offline';
+          badge.style.background = 'var(--border)';
+          badge.style.color = 'var(--text-muted)';
+        }
+      }
+
+      // Single source of truth: NEVER show driver if slot is free / vacant
+      const occ = data.occupant;
+      if (!isFree && occ && (isOccupied || isAssigned)) {
+        setTxt('insp-driver', (occ.driver || 'Driver') + ' (' + (occ.vehicle || 'Vehicle') + ')');
+        setTxt('insp-duration', occ.duration || '--');
+      } else if (isAssigned) {
+        setTxt('insp-driver', 'Assigned (waiting for car arrival)');
+        setTxt('insp-duration', 'Pending Arrival');
+      } else if (isOccupied) {
+        setTxt('insp-driver', 'Vehicle Occupied');
+        setTxt('insp-duration', 'Active');
+      } else {
+        setTxt('insp-driver', 'None (Vacant)');
+        setTxt('insp-duration', 'N/A');
       }
     }
 
@@ -275,23 +630,35 @@
           tile.className = 'slot-tile unknown';
           tile.innerHTML = `
             <div class="slot-header"><span class="slot-name">Slot ${slotId}</span><span class="slot-badge">Offline</span></div>
-            <div class="slot-details"><span>Dist: --</span><span>Cong: --</span></div>
+            <div class="slot-metrics"><span>Dist: --</span><span>Cong: --</span></div>
           `;
           return;
         }
 
-        let cls = 'slot-tile vacant';
+        let cls = 'slot-tile free';
         let badgeTxt = 'Free';
 
         if (data.status === 'OCCUPIED') {
           cls = 'slot-tile occupied';
           badgeTxt = 'Occupied';
-        } else if (data.status === 'RESERVED') {
-          cls = 'slot-tile reserved';
-          badgeTxt = 'Reserved';
+        } else if (data.status === 'ASSIGNED' || data.status === 'RESERVED') {
+          cls = 'slot-tile assigned';
+          badgeTxt = 'Assigned';
         } else if (data.status === 'UNKNOWN') {
           cls = 'slot-tile unknown';
-          badgeTxt = 'No Cam';
+          badgeTxt = 'Offline';
+        }
+
+        if (slotId === selectedSlotId) {
+          cls += ' selected';
+        }
+
+        // Driver / Vehicle display on the tile if assigned or occupied
+        let driverHtml = '';
+        if (data.occupant && (data.status === 'OCCUPIED' || data.status === 'ASSIGNED')) {
+          const dName = data.occupant.driver || 'Driver';
+          const vNum = data.occupant.vehicle || '';
+          driverHtml = `<div class="slot-driver-badge" title="${dName} (${vNum})">${dName} ${vNum ? '• ' + vNum : ''}</div>`;
         }
 
         tile.className = cls;
@@ -300,7 +667,8 @@
             <span class="slot-name">Slot ${slotId}</span>
             <span class="slot-badge">${badgeTxt}</span>
           </div>
-          <div class="slot-details">
+          ${driverHtml}
+          <div class="slot-metrics">
             <span>Dist: ${data.distance}m</span>
             <span>Cong: ${data.congestion} cars</span>
           </div>
@@ -308,6 +676,7 @@
       });
     }
 
+    // 6. Poll AI Recommendation
     async function pollRecommendation(feed) {
       try {
         const res = await fetch('/api/recommend/compare?t=' + Date.now(), { cache: 'no-store' });
@@ -331,6 +700,7 @@
             if (hdr && !recTile.querySelector('.rec-tag')) {
               const tag = document.createElement('span');
               tag.className = 'rec-tag';
+              tag.style.cssText = 'color:var(--green-text); font-size:10px; font-weight:700; margin-left:4px;';
               tag.textContent = ' (AI Best)';
               hdr.appendChild(tag);
             }
@@ -343,28 +713,29 @@
           const distScore = (WEIGHT_DIST * normD).toFixed(2);
           const congScore = (WEIGHT_CONG * normC).toFixed(2);
 
-          setTxt('rec-math', `Distance: ${ai.distance}m (${distScore}) | Congestion: ${ai.congestion} (${congScore}) | Green Score: ${ai.score}`);
+          setTxt('rec-math', `Distance Score: ${distScore} | Congestion Score: ${congScore} | Total Green Score: ${ai.score}`);
 
-          // Distance and emissions saved vs first-free slot
           if (base && base.distance !== undefined) {
             const distDiff = Math.max(0, base.distance - ai.distance);
             const emissSaved = (distDiff * EMISSION_FACTOR_G_PER_M).toFixed(1);
             setTxt('rec-savings', `Estimated distance saved vs first-available: ${distDiff.toFixed(1)} m`);
-            setTxt('rec-emissions', `Estimated emissions saved: ${emissSaved} g CO2 (assumption: passenger car low-speed maneuvering emission factor of 120 g CO2/km).`);
+            setTxt('rec-co2', `Estimated emissions saved: ${emissSaved} g CO2`);
           } else {
             setTxt('rec-savings', 'Optimal allocation: slot is closest with lowest congestion.');
+            setTxt('rec-co2', 'Emissions minimized via shortest path traversal.');
           }
         } else {
           setTxt('rec-slot-id', 'None (Lot Full or Camera Offline)');
           setTxt('rec-math', 'No vacant slots currently available for allocation.');
           setTxt('rec-savings', '--');
+          setTxt('rec-co2', '--');
         }
       } catch (e) {
         console.error('Rec error:', e);
       }
     }
 
-    // 3. Poll System Status & Header Indicators
+    // 7. Poll System Status, KPIs & Mode
     async function pollSystemStatus() {
       try {
         const res = await fetch('/api/system/status?t=' + Date.now(), { cache: 'no-store' });
@@ -377,17 +748,19 @@
           demoBadge.style.display = st.demo_mode ? 'inline-block' : 'none';
         }
 
-        // Camera status
+        // Camera status pill (reflects true frame freshness)
         const camEl = document.getElementById('hdr-cam');
         if (st.camera_active) {
-          camEl.textContent = 'Connected';
+          const modeTag = st.camera_mode === 'QR_SCAN' ? 'QR Scan' : 'Live';
+          camEl.textContent = 'Connected (' + modeTag + ')';
           camEl.className = 'status-val connected';
         } else {
-          camEl.textContent = 'Disconnected';
+          const reason = st.camera_unhealthy_reason ? ' (' + st.camera_unhealthy_reason + ')' : '';
+          camEl.textContent = 'Offline' + reason;
           camEl.className = 'status-val disconnected';
         }
 
-        // Arduino status
+        // Arduino status pill
         const ard = st.arduino || {};
         const ardEl = document.getElementById('hdr-arduino');
         if (ard.connected) {
@@ -398,7 +771,7 @@
           ardEl.className = 'status-val disconnected';
         }
 
-        // Gas sensor status
+        // Gas sensor status pill
         const gasEl = document.getElementById('hdr-gas');
         if (ard.connected || st.demo_mode) {
           gasEl.textContent = 'Connected (MQ-135)';
@@ -408,66 +781,153 @@
           gasEl.className = 'status-val disconnected';
         }
 
-        // Last updated time
-        setTxt('last-updated', 'Last updated: ' + new Date().toLocaleTimeString());
+        // Gate Direction UI sync
+        if (st.gate_direction) {
+          updateDirectionUI(st.gate_direction);
+        }
+
+        // KPIs
+        const kpis = st.kpis || {};
+        setTxt('kpi-free', kpis.free_slots !== undefined ? kpis.free_slots : (st.vacant_slots || 0));
+        setTxt('kpi-occupied', kpis.occupied_slots !== undefined ? kpis.occupied_slots : (st.total_slots - st.vacant_slots));
+        setTxt('kpi-active', kpis.active_sessions !== undefined ? kpis.active_sessions : '--');
+        if (kpis.collected_today !== undefined) {
+          setTxt('kpi-revenue', 'Rs. ' + Number(kpis.collected_today).toFixed(2));
+        }
+
+        // Camera mode status bar
+        updateCameraModeUI({
+          mode: st.camera_mode,
+          last_mode_change: st.last_mode_change,
+          banner: st.qr_banner
+        });
+
       } catch (e) {
         console.error('Status error:', e);
       }
     }
 
-    // 4. Poll Last Scan Result & Gate Status
-    async function pollGate() {
+    // 8. Poll Gate Stepper
+    async function pollStepper() {
       try {
-        const res = await fetch('/api/gate/status?t=' + Date.now(), { cache: 'no-store' });
+        const res = await fetch('/api/gate/stepper?t=' + Date.now(), { cache: 'no-store' });
         if (!res.ok) return;
         const st = await res.json();
-
-        const scan = st.last_scan || {};
-        if (scan.qr) {
-          setTxt('scan-qr', scan.qr);
-          setTxt('scan-driver', (scan.driver || '--') + ' / ' + (scan.vehicle || '--'));
-          setTxt('scan-action', (scan.action || '--').toUpperCase());
-          setTxt('scan-slot', scan.slot_id ? 'Slot ' + scan.slot_id : '--');
-
-          if (scan.duration_minutes !== undefined && scan.duration_minutes !== null) {
-            setTxt('scan-duration', scan.duration_minutes + ' min');
-          } else {
-            setTxt('scan-duration', '--');
-          }
-
-          if (scan.fee !== undefined && scan.fee !== null) {
-            setTxt('scan-fee', 'Rs. ' + Number(scan.fee).toFixed(2));
-          } else {
-            setTxt('scan-fee', '--');
-          }
-
-          if (scan.wallet_after !== undefined && scan.wallet_after !== null) {
-            setTxt('scan-wallet', 'Rs. ' + Number(scan.wallet_after).toFixed(2));
-          } else {
-            setTxt('scan-wallet', '--');
-          }
-
-          const badge = document.getElementById('scan-status-badge');
-          if (badge) {
-            if (scan.success) {
-              badge.textContent = scan.action === 'entry' ? 'Entry Granted' : 'Exit Approved';
-              badge.style.background = '#dcfce7';
-              badge.style.color = '#15803d';
-              setTxt('scan-gate', 'Servo Opened (3s)');
-            } else {
-              badge.textContent = scan.status || 'Rejected';
-              badge.style.background = '#fef2f2';
-              badge.style.color = '#b91c1c';
-              setTxt('scan-gate', 'Denied (Closed)');
-            }
-          }
-        }
+        renderStepper(st);
       } catch (e) {
-        console.error('Gate poll error:', e);
+        console.error('Stepper error:', e);
       }
     }
 
-    // 5. Poll Air Quality & Draw Minimal Chart
+    function renderStepper(st) {
+      if (!st || !st.steps) return;
+
+      if (st.title) {
+        setTxt('stepper-title-text', st.title);
+      }
+
+      const badge = document.getElementById('stepper-status-badge');
+      if (badge) {
+        let badgeText = (st.status || 'READY').replace('_', ' ');
+        if (st.is_demo) {
+          badgeText += ' (DEMO)';
+        }
+        badge.className = 'stepper-status-badge ' + (st.status || 'idle');
+        badge.textContent = badgeText;
+      }
+
+      // Plain text failure reason banner
+      const failBanner = document.getElementById('stepper-failure-banner');
+      if (failBanner) {
+        if (st.status === 'failed') {
+          failBanner.style.display = 'block';
+          failBanner.textContent = 'Failure Reason: ' + (st.error_reason || 'Transaction could not be completed.');
+        } else {
+          failBanner.style.display = 'none';
+        }
+      }
+
+      const isExit = (st.direction === 'EXIT' || st.action === 'exit');
+      const step4Name = document.getElementById('step-name-4');
+      const step5Name = document.getElementById('step-name-5');
+      if (step4Name) step4Name.textContent = isExit ? 'Fee calculated' : 'Fee deducted';
+      if (step5Name) step5Name.textContent = isExit ? 'Slot released' : 'Slot recommended';
+
+      st.steps.forEach(s => {
+        const node = document.getElementById('step-' + s.id);
+        const ind = document.getElementById('step-ind-' + s.id);
+        const desc = document.getElementById('step-desc-' + s.id);
+
+        if (!node) return;
+
+        node.className = 'step-node ' + (s.status || 'idle');
+        if (desc) desc.textContent = s.detail || '';
+
+        if (ind) {
+          if (s.status === 'completed') {
+            ind.textContent = 'OK';
+          } else if (s.status === 'failed') {
+            ind.textContent = 'X';
+          } else {
+            ind.textContent = s.id;
+          }
+        }
+      });
+    }
+
+    // 8B. Poll Last Transaction Card (Visible Payment Result)
+    async function pollLastTransaction() {
+      try {
+        const res = await fetch('/api/gate/last_scan?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const tx = await res.json();
+        if (!tx || !tx.status || tx.status === 'AWAITING_SCAN') return;
+
+        const dName = tx.driver ? tx.driver + (tx.vehicle ? ' (' + tx.vehicle + ')' : '') : (tx.qr ? 'QR: ' + tx.qr.slice(0, 14) : '--');
+        setTxt('tx-driver', dName);
+        setTxt('tx-action', tx.action || 'ENTRY');
+        setTxt('tx-slot', tx.slot_id ? 'Slot ' + tx.slot_id : '--');
+
+        const feeVal = (tx.fee !== null && tx.fee !== undefined) ? 'Rs. ' + Number(tx.fee).toFixed(2) : '--';
+        setTxt('tx-fee', feeVal);
+
+        if (tx.wallet_before !== null && tx.wallet_before !== undefined && tx.wallet_after !== null && tx.wallet_after !== undefined) {
+          setTxt('tx-wallet', 'Rs. ' + Number(tx.wallet_before).toFixed(2) + ' -> Rs. ' + Number(tx.wallet_after).toFixed(2));
+        } else if (tx.wallet_after !== null && tx.wallet_after !== undefined) {
+          setTxt('tx-wallet', 'Rs. ' + Number(tx.wallet_after).toFixed(2));
+        } else {
+          setTxt('tx-wallet', '--');
+        }
+
+        setTxt('tx-time', tx.time || (tx.timestamp ? tx.timestamp.split(' ')[1] : '--'));
+
+        const badge = document.getElementById('last-tx-badge');
+        const reasonBox = document.getElementById('tx-plain-reason');
+
+        if (tx.status === 'ACCEPTED') {
+          if (badge) {
+            badge.textContent = 'Approved';
+            badge.style.background = 'var(--green-bg)';
+            badge.style.color = 'var(--green-text)';
+          }
+          if (reasonBox) reasonBox.style.display = 'none';
+        } else if (tx.status === 'REJECTED') {
+          if (badge) {
+            badge.textContent = 'Rejected';
+            badge.style.background = 'var(--red-bg)';
+            badge.style.color = 'var(--red-text)';
+          }
+          if (reasonBox) {
+            reasonBox.style.display = 'block';
+            reasonBox.textContent = 'Failure Reason: ' + (tx.message || 'Transaction rejected');
+          }
+        }
+      } catch (e) {
+        console.error('Last tx error:', e);
+      }
+    }
+
+    // 9. Poll Air Quality & Canvas Chart
     async function pollAirQuality() {
       try {
         const res = await fetch('/api/air-quality/latest?t=' + Date.now(), { cache: 'no-store' });
@@ -485,21 +945,20 @@
         if (aq.alert_level === 'SAFE') {
           badge.className = 'aq-badge good';
           badge.textContent = 'Good';
-          if (exceed) exceed.textContent = 'Within safe baseline';
+          if (exceed) exceed.textContent = 'Within baseline';
         } else if (aq.alert_level === 'WARNING') {
           badge.className = 'aq-badge moderate';
           badge.textContent = 'Moderate';
-          if (exceed) exceed.textContent = 'Threshold crossed';
+          if (exceed) exceed.textContent = 'Warning limit crossed';
         } else {
           badge.className = 'aq-badge poor';
           badge.textContent = 'Poor';
-          if (exceed) exceed.textContent = 'Harmful level detected';
+          if (exceed) exceed.textContent = 'Harmful gas level';
         }
 
-        // Add to history and redraw chart
         if (aq.raw_value) {
           aqHistory.push(Number(aq.raw_value));
-          if (aqHistory.length > 25) aqHistory.shift();
+          if (aqHistory.length > 30) aqHistory.shift();
           drawAirChart();
         }
       } catch (e) {
@@ -507,7 +966,6 @@
       }
     }
 
-    // Minimal 2D Canvas Line Chart (vanilla JS, zero CDN, plain grey/green)
     function drawAirChart() {
       const canvas = document.getElementById('aq-chart');
       if (!canvas) return;
@@ -517,26 +975,26 @@
 
       ctx.clearRect(0, 0, w, h);
 
-      // Background lines for safe (300) and warning (400) limits
       const minVal = 200;
       const maxVal = 550;
       const range = maxVal - minVal;
 
       function getY(v) {
-        return h - ((v - minVal) / range) * (h - 16) - 8;
+        return h - ((v - minVal) / range) * (h - 14) - 7;
       }
 
-      // Safe limit dotted line (300)
-      ctx.strokeStyle = '#d1d5db';
-      ctx.setLineDash([4, 4]);
+      // Safe threshold dotted line (300)
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
       ctx.beginPath();
       const ySafe = getY(300);
       ctx.moveTo(0, ySafe);
       ctx.lineTo(w, ySafe);
       ctx.stroke();
 
-      // Warning limit dotted line (400)
-      ctx.strokeStyle = '#fca5a5';
+      // Warning threshold line (400)
+      ctx.strokeStyle = '#ef4444';
       ctx.beginPath();
       const yWarn = getY(400);
       ctx.moveTo(0, yWarn);
@@ -546,8 +1004,8 @@
 
       if (aqHistory.length < 2) return;
 
-      // Plot air readings
-      ctx.strokeStyle = '#16a34a';
+      // Plot readings
+      ctx.strokeStyle = '#22c55e';
       ctx.lineWidth = 2;
       ctx.beginPath();
 
@@ -561,7 +1019,45 @@
       ctx.stroke();
     }
 
-    // 6. Poll Recent Sessions Table
+    // 10. Poll Activity Feed (last 15 events)
+    async function pollActivityFeed() {
+      try {
+        const res = await fetch('/api/gate/events?limit=15&t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const events = await res.json();
+        const list = document.getElementById('activity-feed-list');
+        if (!list) return;
+
+        if (!events || events.length === 0) {
+          list.innerHTML = '<div class="feed-item" style="color:var(--text-muted); justify-content:center;">No activity logged yet.</div>';
+          return;
+        }
+
+        list.innerHTML = events.map(e => {
+          let tagCls = 'ir';
+          const ev = (e.event || '').toUpperCase();
+          if (ev.includes('ENTRY_GRANTED')) tagCls = 'entry';
+          else if (ev.includes('EXIT_GRANTED')) tagCls = 'exit';
+          else if (ev.includes('DENIED') || ev.includes('FAILED')) tagCls = 'denied';
+          else if (ev.includes('IR')) tagCls = 'ir';
+
+          const tStr = e.timestamp ? e.timestamp.split('T')[1] || e.timestamp : '--';
+          const detail = (e.note || e.qr || e.slot_id || '').trim();
+
+          return `
+            <div class="feed-item">
+              <span class="feed-time mono">${tStr}</span>
+              <span class="feed-tag ${tagCls}">${ev}</span>
+              <span class="feed-detail">${detail ? detail : 'Event logged'}</span>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Activity feed error:', e);
+      }
+    }
+
+    // 11. Poll Recent Sessions Table
     async function pollSessions() {
       try {
         const res = await fetch('/api/gate/sessions?limit=8&t=' + Date.now(), { cache: 'no-store' });
@@ -571,7 +1067,7 @@
         if (!tbody) return;
 
         if (!sessions || sessions.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="color:#9ca3af; text-align:center; padding:12px;">No sessions logged yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:10px;">No sessions logged yet.</td></tr>';
           return;
         }
 
@@ -579,31 +1075,56 @@
           const feeTxt = (s.fee !== null && s.fee !== undefined) ? 'Rs. ' + Number(s.fee).toFixed(2) : '--';
           const statusTxt = s.status || 'ACTIVE';
           const isParked = statusTxt === 'PARKED' || statusTxt === 'ACTIVE';
-          const color = isParked ? '#15803d' : '#4b5563';
+          const color = isParked ? 'var(--green-text)' : 'var(--text-secondary)';
 
           return `
             <tr>
               <td><strong>${s.driver || s.driver_id || '--'}</strong></td>
-              <td>${s.vehicle || '--'}</td>
+              <td class="mono">${s.vehicle || '--'}</td>
               <td>${s.slot_id ? 'Slot ' + s.slot_id : '--'}</td>
-              <td>${s.entrytime || '--'}</td>
-              <td>${s.exittime || '--'}</td>
+              <td class="mono">${s.entrytime || '--'}</td>
+              <td class="mono">${s.exittime || '--'}</td>
               <td><strong>${feeTxt}</strong></td>
               <td style="color:${color}; font-weight:600;">${statusTxt}</td>
             </tr>
           `;
         }).join('');
       } catch (e) {
-        console.error('Sessions poll error:', e);
+        console.error('Sessions error:', e);
       }
     }
 
-    // Manual QR Scan Fallback Submission
+    // 12. Manual QR Simulation
+    window.fillQuickQR = function(val) {
+      const input = document.getElementById('manual-qr-input');
+      if (input) input.value = val;
+    };
+
+    window.triggerSimulatedIR = async function(evt) {
+      const eventName = evt || 'IR_ENTRY';
+      try {
+        await fetch('/api/gate/trigger_ir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: eventName })
+        });
+        if (eventName === 'IR_ENTRY') {
+          updateDirectionUI('ENTRY');
+        } else if (eventName === 'IR_EXIT') {
+          updateDirectionUI('EXIT');
+        }
+        pollFast();
+        pollActivityFeed();
+      } catch (e) {
+        console.error('IR trigger error:', e);
+      }
+    };
+
     window.simulateQRScan = async function() {
       const input = document.getElementById('manual-qr-input');
       const val = (input.value || '').trim();
       if (!val) {
-        alert('Please enter a Driver ID or QR string (e.g. D101:MH-02-AB1234)');
+        alert('Please enter a Driver ID or QR string');
         return;
       }
 
@@ -611,31 +1132,45 @@
         const res = await fetch('/api/gate/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ qr: val })
+          body: JSON.stringify({ qr: val, direction: currentGateDirection })
         });
         const out = await res.json();
-        pollGate();
-        pollSessions();
-        pollSlots();
+        pollFast();
+        pollSlow();
+        pollLastTransaction();
+
+        // If scan rejected, display failure reason immediately
+        if (!out.success) {
+          const failBanner = document.getElementById('stepper-failure-banner');
+          if (failBanner) {
+            failBanner.style.display = 'block';
+            failBanner.textContent = 'Failure Reason: ' + (out.message || out.error_reason || 'Scan rejected.');
+          }
+        }
       } catch (err) {
         alert('Scan request failed: ' + err.message);
       }
     };
 
-    // Initialize all polling timers
-    updateFrame();
-    setInterval(updateFrame, 250); // Frame refresh ~4 FPS for smooth live look
-
-    function pollAll() {
+    // Polling schedules
+    function pollFast() {
       pollSlots();
       pollSystemStatus();
-      pollGate();
+      pollStepper();
+      pollLastTransaction();
+    }
+
+    function pollSlow() {
       pollAirQuality();
+      pollActivityFeed();
       pollSessions();
     }
 
-    pollAll();
-    setInterval(pollAll, 2000); // 2s auto-refresh
+    pollFast();
+    pollSlow();
+
+    setInterval(pollFast, 1500); // 1.5s fast poll for real-time stepper and slot tracking
+    setInterval(pollSlow, 3000); // 3s slower poll for tables & air quality
   </script>
 </body>
 </html>

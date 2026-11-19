@@ -60,7 +60,9 @@ class SerialManager:
         self.last_air = None            # last processed air alert dict
         self.last_air_level = None
         self.last_ir_event = None
-        self.recent_lines = collections.deque(maxlen=50)
+        self.recent_lines = []
+        self.on_ir_entry_callback = None  # Called on IR_ENTRY event
+        self.on_ir_exit_callback = None   # Called on IR_EXIT event
 
     # ------------------------------------------------------------------
     # public API
@@ -121,6 +123,7 @@ class SerialManager:
     def _connect(self) -> bool:
         import os
         ports_to_try = []
+        env_port = os.getenv("ARDUINO_PORT")
         if env_port and env_port.upper() != "AUTO":
             ports_to_try.append((env_port, "env"))
         else:
@@ -203,6 +206,16 @@ class SerialManager:
             except Exception as e:
                 print(f"[SERIAL] Could not log IR event: {e}")
             print(f"[ARDUINO] {line}")
+            if line == "IR_ENTRY" and self.on_ir_entry_callback:
+                try:
+                    self.on_ir_entry_callback()
+                except Exception as cb_err:
+                    print(f"[SERIAL] IR entry callback error: {cb_err}")
+            elif line == "IR_EXIT" and self.on_ir_exit_callback:
+                try:
+                    self.on_ir_exit_callback()
+                except Exception as cb_err:
+                    print(f"[SERIAL] IR exit callback error: {cb_err}")
             return
 
         # --- everything else (acknowledgements etc.) --------------------

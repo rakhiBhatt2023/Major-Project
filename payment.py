@@ -29,6 +29,8 @@ import db
 ENTRY_FEE = 10.0          # Base entry fee (Rs 10 covers first 5 minutes)
 PER_MINUTE_RATE = 2.0     # Rs 2 per minute after 5 minutes
 CREDIT_ENTRY_FEE = True   # entry fee counts towards the final fee
+MAX_FEE_CAP = 200.0       # (b) Cap any single fee at Rs 200
+STALE_SESSION_HOURS = 12.0 # (a) Any session older than 12 hours is treated as STALE (fee 0)
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -164,7 +166,57 @@ def find_driver(qr_text):
 get_user = find_driver
 
 
+def cleanup_stale_sessions():
+    """(a) Any session older than 12 hours is treated as STALE: auto-close with fee 0 and log 'stale session closed', never charge it."""
+    try:
+        conn = _conn()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT sessionid, driver_id, entrytime FROM sessions
+            WHERE status = 'ACTIVE' OR status != 'COMPLETED'
+        """)
+        rows = cur.fetchall()
+        now_dt = datetime.now()
+        now_str = _now()
+        closed_count = 0
+        for r in rows:
+            entry_str = r["entrytime"]
+            if not entry_str:
+                continue
+            try:
+                entry_dt = datetime.strptime(entry_str, TIME_FMT)
+                elapsed_hours = (now_dt - entry_dt).total_seconds() / 3600.0
+                if elapsed_hours >= STALE_SESSION_HOURS:
+                    sid = r["sessionid"]
+                    did = r["driver_id"]
+                    cur.execute("""
+                        UPDATE sessions SET exittime = ?, fee = 0.0, status = 'COMPLETED'
+                        WHERE sessionid = ?
+                    """, (now_str, sid))
+                    cur.execute("""
+                        UPDATE parkingrecords SET exittime = ?, amountpaid = 0.0, status = 'COMPLETED'
+                        WHERE driver_id = ? AND (status = 'PARKED' OR status != 'COMPLETED')
+                    """, (now_str, did))
+                    print(f"[PAYMENT] Stale session closed: sessionid={sid}, driver={did}, age={elapsed_hours:.1f}h")
+                    log_scan(did, "INFO", "stale session closed")
+                    try:
+                        db.log_gate_event("STALE_SESSION_CLOSED", qr=did, note=f"stale session closed (age: {elapsed_hours:.1f}h, fee 0)")
+                    except Exception:
+                        pass
+                    closed_count += 1
+            except Exception as pe:
+                pass
+        if closed_count > 0:
+            conn.commit()
+        conn.close()
+        return closed_count
+    except Exception as e:
+        print(f"[PAYMENT] cleanup_stale_sessions error: {e}")
+        return 0
+
+
 def _active_session(driver_id):
+    cleanup_stale_sessions()
     conn = _conn()
     cur = conn.cursor()
     cur.execute("""
@@ -239,6 +291,7 @@ def start_entry(qr_text, slot_id, fee=ENTRY_FEE):
         "driver": driver["name"],
         "vehicle": driver["vehicle_no"],
         "fee": fee,
+        "wallet_before": wallet,
         "wallet_after": wallet - fee,
         "slot_id": slot_id,
     }
@@ -258,7 +311,7 @@ def process_exit(qr_text):
     session = _active_session(driver_id)
     if session is None:
         log_scan(qr_text, "DENIED", "No active session")
-        return False, "No active session for this driver", {}
+        return False, "No active entry for this driver", {}
 
     conn = _conn()
     cur = conn.cursor()
@@ -275,14 +328,51 @@ def process_exit(qr_text):
     elapsed_seconds = max(0.0, (datetime.strptime(exit_time, TIME_FMT) - entry_dt).total_seconds())
     minutes = max(0.0, elapsed_seconds / 60.0)
     hours = minutes / 60.0
+    wallet = float(driver["wallet"] or 0)
 
-    # Project formula: max(10, (minutes - 5) * 2)
-    total_fee = round(max(10.0, (minutes - 5.0) * 2.0), 2)
+    # (a) Check if session is older than 12 hours: treated as STALE -> auto-close with fee 0, never charge
+    if hours >= STALE_SESSION_HOURS:
+        conn = _conn()
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                UPDATE sessions SET exittime = ?, fee = 0.0, status = 'COMPLETED'
+                WHERE sessionid = ?
+            """, (exit_time, session["sessionid"]))
+            if record is not None:
+                cur.execute("""
+                    UPDATE parkingrecords
+                    SET exittime = ?, amountpaid = 0.0, status = 'COMPLETED'
+                    WHERE id = ?
+                """, (exit_time, record["id"]))
+            conn.commit()
+        finally:
+            conn.close()
+        print(f"[PAYMENT] Stale session closed: sessionid={session['sessionid']}, driver={driver_id}, age={hours:.1f}h")
+        log_scan(qr_text, "INFO", "stale session closed")
+        try:
+            db.log_gate_event("STALE_SESSION_CLOSED", qr=qr_text, note=f"stale session closed (age: {hours:.1f}h, fee 0)")
+        except Exception:
+            pass
+        return True, "Stale session closed (fee 0)", {
+            "driver": driver["name"],
+            "vehicle": driver["vehicle_no"],
+            "duration_minutes": round(minutes, 2),
+            "duration_hours": round(hours, 3),
+            "charged_now": 0.0,
+            "total_paid": 0.0,
+            "wallet_after": wallet,
+            "slot_id": record["slotid"] if record else None,
+            "stale": True
+        }
+
+    # (b) Cap any single fee at Rs 200, formula: max(10, (minutes - 5) * 2)
+    uncapped_fee = round(max(10.0, (minutes - 5.0) * 2.0), 2)
+    total_fee = min(MAX_FEE_CAP, uncapped_fee)
     already_paid = float(session["fee"] or 0) if CREDIT_ENTRY_FEE else 0.0
     charge_now = max(0.0, round(total_fee - already_paid, 2))
     paid_total = round(already_paid + charge_now, 2)
 
-    wallet = float(driver["wallet"] or 0)
     if wallet < charge_now:
         log_scan(qr_text, "DENIED", "Insufficient wallet at exit")
         return False, f"Insufficient wallet (Rs.{wallet:.2f} < Rs.{charge_now:.2f})", {}
@@ -318,6 +408,7 @@ def process_exit(qr_text):
         "duration_hours": round(hours, 3),
         "charged_now": charge_now,
         "total_paid": paid_total,
+        "wallet_before": wallet,
         "wallet_after": wallet - charge_now,
         "slot_id": record["slotid"] if record else None,
         "fee_formula": "max(10, (minutes - 5) * 2)"

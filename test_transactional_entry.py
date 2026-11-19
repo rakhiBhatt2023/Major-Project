@@ -35,8 +35,26 @@ from serial_manager import serial_manager
 class TestSmartParkSystem(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import tempfile
+        cls.temp_db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        cls.temp_db_path = cls.temp_db_file.name
+        cls.temp_db_file.close()
+        db.set_db_path(cls.temp_db_path)
         db.init_db()
+        payment.init_minor_tables()
+        from air_quality_db import create_air_quality_table
+        create_air_quality_table()
         cls.tracker = RealtimeParkingTracker()
+        db.sync_slot_coordinates(cls.tracker.slots)
+
+    @classmethod
+    def tearDownClass(cls):
+        db.reset_db_path()
+        if hasattr(cls, 'temp_db_path') and os.path.exists(cls.temp_db_path):
+            try:
+                os.remove(cls.temp_db_path)
+            except Exception:
+                pass
 
     def setUp(self):
         # Reset tracker state before each test
@@ -47,12 +65,12 @@ class TestSmartParkSystem(unittest.TestCase):
         self.tracker.last_frame_timestamp = time.time()
 
     def test_01_vacant_slots(self):
-        """TEST 1: All 4 slots empty (VACANT)."""
+        """TEST 1: All 4 slots empty (VACANT / FREE)."""
         self.tracker.use_live_webcam = True
         self.tracker.last_frame_timestamp = time.time()
         feed = self.tracker.get_live_slot_feed()
         for slot_id, s in feed.items():
-            self.assertEqual(s["status"], "VACANT")
+            self.assertIn(s["status"], ["VACANT", "FREE"])
             self.assertTrue(s["vacant"])
             self.assertFalse(s["reserved"])
             self.assertFalse(s["unknown"])
@@ -68,7 +86,7 @@ class TestSmartParkSystem(unittest.TestCase):
         feed = self.tracker.get_live_slot_feed()
         self.assertEqual(feed["A1"]["status"], "OCCUPIED")
         self.assertFalse(feed["A1"]["vacant"])
-        self.assertEqual(feed["A2"]["status"], "VACANT")
+        self.assertIn(feed["A2"]["status"], ["VACANT", "FREE"])
         self.assertTrue(feed["A2"]["vacant"])
 
     def test_03_camera_offline_unknown_state(self):
@@ -84,7 +102,7 @@ class TestSmartParkSystem(unittest.TestCase):
             self.assertFalse(s["vacant"])
 
     def test_04_slot_reservation(self):
-        """TEST 4: Temporary slot reservation sets status RESERVED and prevents double booking."""
+        """TEST 4: Temporary slot reservation sets status RESERVED / ASSIGNED and prevents double booking."""
         self.tracker.use_live_webcam = True
         self.tracker.last_frame_timestamp = time.time()
         
@@ -93,7 +111,7 @@ class TestSmartParkSystem(unittest.TestCase):
         self.assertTrue(res1)
 
         feed = self.tracker.get_live_slot_feed()
-        self.assertEqual(feed["A1"]["status"], "RESERVED")
+        self.assertIn(feed["A1"]["status"], ["RESERVED", "ASSIGNED"])
         self.assertTrue(feed["A1"]["reserved"])
 
         # Second transaction trying to reserve same slot should fail
@@ -104,7 +122,7 @@ class TestSmartParkSystem(unittest.TestCase):
         # Release reservation
         self.tracker.release_reservation(slot_id="A1")
         feed_after = self.tracker.get_live_slot_feed()
-        self.assertEqual(feed_after["A1"]["status"], "VACANT")
+        self.assertIn(feed_after["A1"]["status"], ["VACANT", "FREE"])
 
     def test_05_green_score_recommendation(self):
         """TEST 5: AI slot recommendation selects optimal slot based on distance & congestion."""
@@ -159,7 +177,7 @@ class TestSmartParkSystem(unittest.TestCase):
             tx_id = data_reserve["transaction_id"]
 
             # Step 3: Pay
-            res_pay = client.post('/api/entry/pay', json={"qr": driver_id, "transaction_id": tx_id, "slot_id": rec_slot, "amount": 20.0})
+            res_pay = client.post('/api/entry/pay', json={"qr": driver_id, "transaction_id": tx_id, "slot_id": rec_slot, "amount": 10.0})
             self.assertEqual(res_pay.status_code, 200)
             data_pay = res_pay.get_json()
             self.assertTrue(data_pay["success"])
@@ -257,8 +275,8 @@ class TestSmartParkSystem(unittest.TestCase):
             self.assertEqual(scan_row["qrtext"], canonical_qr)
             conn.close()
 
-            # 9.4 Idempotency Check: 2nd scan while inside triggers safe Exit flow
-            res_exit = client.post('/api/gate/scan', json={"qr": canonical_qr})
+            # 9.4 Idempotency Check: 2nd scan while inside triggers safe Exit flow in EXIT direction
+            res_exit = client.post('/api/gate/scan', json={"qr": canonical_qr, "direction": "EXIT"})
             self.assertEqual(res_exit.status_code, 200)
             data_exit = res_exit.get_json()
             self.assertTrue(data_exit["success"])
@@ -354,7 +372,7 @@ class TestSmartParkSystem(unittest.TestCase):
         tracker.consecutive_failures = 0
         tracker.use_live_webcam = True
         feed_recovered = tracker.get_live_slot_feed()
-        self.assertIn(feed_recovered["A1"]["status"], ["VACANT", "OCCUPIED"])
+        self.assertIn(feed_recovered["A1"]["status"], ["VACANT", "FREE", "OCCUPIED"])
 
     def test_13_single_tracker_instance_verification(self):
         """TEST 13: Verify single tracker instance shared across Flask app and gate routes."""

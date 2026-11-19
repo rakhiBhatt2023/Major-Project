@@ -24,8 +24,27 @@ import os
 import sqlite3
 from datetime import datetime
 
-# absolute path: the same smart_parking.db no matter where Python is started from
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smart_parking.db")
+# absolute path: default smart_parking.db in workspace root
+DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smart_parking.db")
+DB_PATH = os.environ.get("SMART_PARKING_DB", DEFAULT_DB_PATH)
+
+
+def set_db_path(path: str):
+    """Overrides the database path for tests to prevent modifying smart_parking.db."""
+    global DB_PATH
+    DB_PATH = path
+    os.environ["SMART_PARKING_DB"] = path
+
+
+def reset_db_path():
+    """Resets database path back to smart_parking.db."""
+    global DB_PATH
+    DB_PATH = DEFAULT_DB_PATH
+    os.environ.pop("SMART_PARKING_DB", None)
+
+
+def get_db_path() -> str:
+    return DB_PATH
 
 
 def get_connection():
@@ -224,11 +243,27 @@ def log_gate_event(event: str, qr: str = None, slot_id: str = None, note: str = 
 
 
 def get_gate_events(limit: int = 50):
-    """Most recent gate events first — used by /api/gate/events."""
+    """Most recent gate events first — used by /api/gate/events with driver name & vehicle lookup."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM gate_events ORDER BY id DESC LIMIT ?", (limit,))
-    rows = [dict(r) for r in cur.fetchall()]
+    cur.execute("""
+        SELECT g.*, d.name AS driver_name, d.vehicle_no
+        FROM gate_events g
+        LEFT JOIN drivers d ON g.qr = d.driver_id
+        ORDER BY g.id DESC LIMIT ?
+    """, (limit,))
+    rows = []
+    for r in cur.fetchall():
+        d = dict(r)
+        if d.get("driver_name"):
+            v_no = d.get("vehicle_no") or ""
+            d["driver_display"] = f"{d['driver_name']} ({v_no})" if v_no else d['driver_name']
+        elif d.get("qr"):
+            short = d["qr"][:8] if len(d["qr"]) >= 8 else d["qr"]
+            d["driver_display"] = f"Unregistered QR ({short})"
+        else:
+            d["driver_display"] = None
+        rows.append(d)
     conn.close()
     return rows
 
@@ -303,6 +338,214 @@ def get_recent_sessions(limit: int = 50):
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
+
+
+def get_slot_occupants():
+    """Returns mapping of slot_id -> current parked driver & vehicle details with elapsed duration."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT pr.slotid, pr.entrytime, pr.amountpaid, pr.status,
+               d.driver_id, d.name AS driver_name, d.vehicle_no, d.wallet
+        FROM parkingrecords pr
+        JOIN drivers d ON pr.driver_id = d.driver_id
+        WHERE pr.status = 'PARKED'
+        ORDER BY pr.id DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    occupants = {}
+    now = datetime.now()
+    for r in rows:
+        sid = str(r["slotid"]).strip().upper()
+        if sid not in occupants:
+            entry_str = r["entrytime"]
+            dur_str = "--"
+            dur_mins = 0.0
+            try:
+                entry_dt = datetime.strptime(entry_str, "%Y-%m-%d %H:%M:%S")
+                elapsed_sec = max(0.0, (now - entry_dt).total_seconds())
+                mins = int(elapsed_sec // 60)
+                secs = int(elapsed_sec % 60)
+                dur_mins = round(elapsed_sec / 60.0, 1)
+                dur_str = f"{mins}m {secs}s" if mins < 60 else f"{mins // 60}h {mins % 60}m"
+            except Exception:
+                pass
+            occupants[sid] = {
+                "driver": r["driver_name"],
+                "vehicle": r["vehicle_no"],
+                "entrytime": entry_str,
+                "duration": dur_str,
+                "duration_minutes": dur_mins,
+                "paid": r["amountpaid"]
+            }
+    return occupants
+
+
+def get_kpis(feed=None):
+    """Calculates live KPI metrics: Free slots, Occupied, Active sessions, Collected today (Rs)."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Active sessions in DB
+    cur.execute("SELECT COUNT(*) FROM sessions WHERE status = 'ACTIVE' OR status != 'COMPLETED'")
+    active_row = cur.fetchone()
+    active_sessions = active_row[0] if active_row else 0
+
+    # Occupied slots must agree with active sessions and camera feed:
+    # A slot is occupied when camera sees a car OR an active session is assigned to it.
+    if feed:
+        occupied_slots = sum(1 for s in feed.values() if s.get("status") in ("OCCUPIED", "ASSIGNED", "RESERVED") or not s.get("vacant", False))
+        occupied_slots = max(occupied_slots, active_sessions)
+        free_slots = max(0, len(feed) - occupied_slots)
+    else:
+        occupied_slots = active_sessions
+        free_slots = max(0, 4 - occupied_slots)
+
+    # Collected today: must sum only today's completed session fees (capped at Rs 200) + today's active session fees
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cur.execute("""
+        SELECT sessionid, entrytime, exittime, fee, status
+        FROM sessions
+        WHERE (entrytime LIKE ? OR exittime LIKE ?)
+    """, (f"{today_str}%", f"{today_str}%"))
+    session_rows = cur.fetchall()
+
+    collected_today = 0.0
+    for r in session_rows:
+        s_fee = float(r["fee"] or 0.0)
+        s_entry = str(r["entrytime"] or "")
+        s_exit = str(r["exittime"] or "")
+        s_status = str(r["status"] or "")
+
+        # Cap single fee at 200
+        capped_fee = min(200.0, max(0.0, s_fee))
+
+        if s_status == 'ACTIVE':
+            if s_entry.startswith(today_str):
+                collected_today += capped_fee
+        elif s_status == 'COMPLETED':
+            if s_entry.startswith(today_str) and s_exit.startswith(today_str):
+                collected_today += capped_fee
+            elif s_exit.startswith(today_str):
+                exit_charge = max(0.0, capped_fee - 10.0)
+                collected_today += exit_charge
+            elif s_entry.startswith(today_str):
+                collected_today += min(10.0, capped_fee)
+
+    conn.close()
+
+    return {
+        "free_slots": free_slots,
+        "occupied_slots": occupied_slots,
+        "active_sessions": active_sessions,
+        "collected_today": round(float(collected_today), 2)
+    }
+
+
+def reset_demo_data(backup: bool = True, recalibrate: bool = False, tracker = None):
+    """Executes full demo reset:
+    (a) copy smart_parking.db to smart_parking_backup_<timestamp>.db
+    (b) close/delete all active sessions, parking records, and slot reservations without charging anyone
+    (c) reset every driver wallet to Rs 500
+    (d) clear the Last Transaction card, the stepper and the live activity feed (gate_events)
+    (e) reset camera mode to Slot Detection and direction to ENTRY, clear slot freeze and manual overrides
+    (f) optional recalibration of empty slots if requested
+    Do NOT delete drivers, QR codes, air quality history or settings.
+    Do NOT send gate/servo commands.
+    """
+    import shutil
+    from datetime import datetime
+
+    backup_name = None
+    target_db = DB_PATH
+    if backup and os.path.exists(target_db):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"smart_parking_backup_{ts}.db"
+        backup_path = os.path.join(os.path.dirname(os.path.abspath(target_db)), backup_name)
+        try:
+            shutil.copy2(target_db, backup_path)
+            print(f"[RESET DEMO] Backup created: {backup_name}")
+        except Exception as e:
+            print(f"[RESET DEMO] Backup error: {e}")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM sessions")
+    sess_cnt = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM parkingrecords")
+    rec_cnt = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM drivers")
+    driver_cnt = cur.fetchone()[0]
+
+    cur.execute("DELETE FROM sessions")
+    cur.execute("DELETE FROM parkingrecords")
+    cur.execute("DELETE FROM slot_reservations")
+    cur.execute("DELETE FROM parking_transactions")
+    cur.execute("DELETE FROM gate_events")
+
+    cur.execute("UPDATE drivers SET wallet = 500.0")
+
+    conn.commit()
+    conn.close()
+
+    try:
+        from gate_routes import _latest_scan_result, stepper, set_gate_direction
+        _latest_scan_result.update({
+            "qr": None,
+            "timestamp": None,
+            "time": None,
+            "action": None,
+            "status": "AWAITING_SCAN",
+            "message": "Awaiting scan",
+            "driver": None,
+            "driver_display": None,
+            "vehicle": None,
+            "slot_id": None,
+            "fee": None,
+            "wallet_before": None,
+            "wallet_after": None,
+            "duration_minutes": None,
+            "payment": {},
+            "recommended_slot": {},
+            "success": None
+        })
+        stepper.reset(direction="ENTRY", is_demo=False)
+        set_gate_direction("ENTRY")
+    except Exception as e:
+        print(f"[RESET DEMO] In-memory UI reset error: {e}")
+
+    calib_text = ""
+    if tracker:
+        try:
+            tracker.set_camera_mode("SLOT_DETECTION", reason="Reset Demo triggered")
+            tracker.qr_freeze_until = 0.0
+            tracker.reservations.clear()
+            for sid in tracker.slot_debounce:
+                tracker.slot_debounce[sid]["pending_since"] = 0.0
+            if recalibrate:
+                ok = tracker.calibrate_baseline()
+                calib_text = " Empty slots recalibrated." if ok else " Calibration failed."
+        except Exception as e:
+            print(f"[RESET DEMO] Tracker reset error: {e}")
+
+    summary = (
+        f"Reset complete: {sess_cnt} sessions and {rec_cnt} parking records cleared. "
+        f"{driver_cnt} driver wallets reset to Rs. 500.00. Stepper, last transaction, and activity feed cleared. "
+        f"Camera mode set to Slot Detection (ENTRY). Backup: {backup_name or 'None'}.{calib_text}"
+    )
+    print(f"[RESET DEMO] {summary}")
+    return {
+        "status": "ok",
+        "summary": summary,
+        "backup_file": backup_name,
+        "sessions_cleared": sess_cnt,
+        "records_cleared": rec_cnt,
+        "wallets_reset": driver_cnt,
+        "recalibrated": recalibrate
+    }
 
 
 # ---------------------------------------------------------------------------
