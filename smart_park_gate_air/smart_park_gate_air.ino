@@ -297,8 +297,8 @@ void setup() {
   lcd.init();
   lcd.backlight();
 
-  pinMode(IR_ENTRY, INPUT);
-  pinMode(IR_EXIT, INPUT);
+  pinMode(IR_ENTRY, INPUT_PULLUP);
+  pinMode(IR_EXIT, INPUT_PULLUP);
   pinMode(RED_LED, OUTPUT);
   pinMode(GREEN_LED, OUTPUT);
 
@@ -339,17 +339,23 @@ void loop() {
     handleSerialCommand(cmd);
   }
 
-  // 2) entry IR
-  if (digitalRead(IR_ENTRY) == LOW && (now - lastEntryTrigger > IR_DEBOUNCE_MS)) {
+  // 2) entry IR (Edge-triggered: HIGH -> LOW transition on vehicle arrival)
+  static int prevEntryVal = HIGH;
+  int currEntryVal = digitalRead(IR_ENTRY);
+  if (currEntryVal == LOW && prevEntryVal == HIGH && (now - lastEntryTrigger > IR_DEBOUNCE_MS)) {
     lastEntryTrigger = now;
     Serial.println("IR_ENTRY");
   }
+  prevEntryVal = currEntryVal;
 
-  // 3) exit IR
-  if (digitalRead(IR_EXIT) == LOW && (now - lastExitTrigger > IR_DEBOUNCE_MS)) {
+  // 3) exit IR (Edge-triggered: HIGH -> LOW transition on vehicle arrival)
+  static int prevExitVal = HIGH;
+  int currExitVal = digitalRead(IR_EXIT);
+  if (currExitVal == LOW && prevExitVal == HIGH && (now - lastExitTrigger > IR_DEBOUNCE_MS)) {
     lastExitTrigger = now;
     Serial.println("IR_EXIT");
   }
+  prevExitVal = currExitVal;
 
   // 4) MQ-135 reading every 2 seconds, as JSON
   if (now - lastAirSend >= AIR_SEND_MS) {

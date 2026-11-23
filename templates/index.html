@@ -469,14 +469,16 @@
 
     // 4. Camera Mode & Direction Switching
     let currentGateDirection = 'ENTRY';
+    let isManualGateSelected = true;
     async function setGateDirection(dir) {
       currentGateDirection = (dir || 'ENTRY').toUpperCase();
+      isManualGateSelected = true;
       updateDirectionUI(currentGateDirection);
       try {
         const res = await fetch('/api/gate/direction', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direction: currentGateDirection })
+          body: JSON.stringify({ direction: currentGateDirection, manual: true })
         });
         const data = await res.json();
         if (data.stepper_title) {
@@ -782,8 +784,13 @@
         }
 
         // Gate Direction UI sync
-        if (st.gate_direction) {
-          updateDirectionUI(st.gate_direction);
+        // Polling MUST NOT overwrite manual user selection.
+        // Only update if auto_gate_mode is enabled on the backend AND manual guard is not active,
+        // or if manual selection has not been made.
+        if (st.gate_direction && (!isManualGateSelected || (st.auto_gate_mode && !st.manual_active))) {
+          if (st.gate_direction !== currentGateDirection) {
+            updateDirectionUI(st.gate_direction);
+          }
         }
 
         // KPIs
@@ -1103,15 +1110,15 @@
     window.triggerSimulatedIR = async function(evt) {
       const eventName = evt || 'IR_ENTRY';
       try {
-        await fetch('/api/gate/trigger_ir', {
+        const res = await fetch('/api/gate/trigger_ir', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ event: eventName })
         });
-        if (eventName === 'IR_ENTRY') {
-          updateDirectionUI('ENTRY');
-        } else if (eventName === 'IR_EXIT') {
-          updateDirectionUI('EXIT');
+        const out = await res.json();
+        if (out && out.switched && out.direction) {
+          isManualGateSelected = false;
+          updateDirectionUI(out.direction);
         }
         pollFast();
         pollActivityFeed();

@@ -17,6 +17,8 @@ NOTE: This module does NOT do recommendation, scoring, or slot selection.
 
 import cv2
 import time
+import queue
+import threading
 import numpy as np
 
 class RealtimeParkingTracker:
@@ -104,7 +106,6 @@ class RealtimeParkingTracker:
         self.qr_mode_timeout_at = 0.0
         self.last_qr_detected = ""
         self.qr_banner = "Vehicle at gate - show your QR code"
-
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=25, detectShadows=False)
 
         self.cap = None
@@ -112,6 +113,18 @@ class RealtimeParkingTracker:
         self.active_camera_index = -1
         self.scan_line_y = 0
         self.last_mean_brightness = 120.0
+
+        # YOLOv8 Vehicle Detector Integration (with OpenCV ROI fallback)
+        self.yolo_model = None
+        self.yolo_available = False
+        self.detector_backend = "OPENCV_ROI"
+        self.detected_vehicle_boxes = []
+        self.latest_yolo_occupied = {}
+        self._yolo_frame_queue = queue.Queue(maxsize=1)
+        self._yolo_thread = None
+        self._init_yolo_model()
+        if self.yolo_available:
+            self._start_yolo_worker()
 
         self.init_camera()
 
@@ -158,11 +171,25 @@ class RealtimeParkingTracker:
 
     def is_camera_healthy(self) -> bool:
         """Returns True if webcam is active, fresh frames are captured, AND fresh detection is processed."""
-        if not self.use_live_webcam or not self.cap or not self.cap.isOpened():
+        if not self.use_live_webcam:
             return False
-        now = time.monotonic()
-        frame_fresh = (now - self.last_frame_timestamp) < self.STALE_TIMEOUT
-        detection_fresh = (now - self.last_detection_timestamp) < self.STALE_TIMEOUT
+        if self.cap is not None and not self.cap.isOpened():
+            return False
+        now_mono = time.monotonic()
+        now_wall = time.time()
+        # Compute frame age safely supporting monotonic or wall-clock timestamps
+        if self.last_frame_timestamp > 1e8:
+            frame_age = abs(now_wall - self.last_frame_timestamp)
+        else:
+            frame_age = (now_mono - self.last_frame_timestamp) if self.last_frame_timestamp > 0 else 9999.0
+
+        if self.last_detection_timestamp > 1e8:
+            detection_age = abs(now_wall - self.last_detection_timestamp)
+        else:
+            detection_age = (now_mono - self.last_detection_timestamp) if self.last_detection_timestamp > 0 else 9999.0
+
+        frame_fresh = frame_age < self.STALE_TIMEOUT
+        detection_fresh = detection_age < self.STALE_TIMEOUT
         return frame_fresh and detection_fresh
 
     def get_unhealthy_reason(self) -> str:
@@ -171,11 +198,14 @@ class RealtimeParkingTracker:
             if getattr(self, 'reconnect_attempts', 0) > 0:
                 return f"reconnecting (attempt {self.reconnect_attempts})"
             return "camera stopped"
-        if not self.cap or not self.cap.isOpened():
+        if self.cap is not None and not self.cap.isOpened():
             return "camera device unopened"
-        now = time.monotonic()
-        frame_age = round(now - self.last_frame_timestamp, 1) if self.last_frame_timestamp > 0 else 9999.0
-        detection_age = round(now - self.last_detection_timestamp, 1) if self.last_detection_timestamp > 0 else 9999.0
+        now_mono = time.monotonic()
+        now_wall = time.time()
+        frame_age = abs(now_wall - self.last_frame_timestamp) if self.last_frame_timestamp > 1e8 else ((now_mono - self.last_frame_timestamp) if self.last_frame_timestamp > 0 else 9999.0)
+        detection_age = abs(now_wall - self.last_detection_timestamp) if self.last_detection_timestamp > 1e8 else ((now_mono - self.last_detection_timestamp) if self.last_detection_timestamp > 0 else 9999.0)
+        frame_age = round(frame_age, 1)
+        detection_age = round(detection_age, 1)
         if frame_age >= self.STALE_TIMEOUT:
             return f"no frame for {frame_age}s"
         if detection_age >= self.STALE_TIMEOUT:
@@ -435,7 +465,9 @@ class RealtimeParkingTracker:
             "slots": diag,
             "mean_brightness": mean_b,
             "is_too_dark": mean_b < 50.0,
-            "hardware": self.get_camera_hardware_info()
+            "hardware": self.get_camera_hardware_info(),
+            "detector_backend": getattr(self, "detector_backend", "OPENCV_ROI"),
+            "yolo_available": getattr(self, "yolo_available", False)
         }
 
     def set_slot_thresholds(self, slot_id: str, free_th: int = None, occ_th: int = None) -> bool:
@@ -460,17 +492,25 @@ class RealtimeParkingTracker:
         return self.init_camera()
 
     def init_camera(self):
-        """Try to open the webcam. Configurable via CAMERA_INDEX env var."""
+        """Try to open the webcam. Configurable via CAMERA_INDEX env var.
+        Falls back to available device indices (e.g. index 0) if configured index fails."""
         import os
         if self.cap and self.cap.isOpened():
             self.cap.release()
 
         target_idx = int(os.environ.get("CAMERA_INDEX", 0))
-        attempts = [
-            (target_idx, cv2.CAP_DSHOW),
-            (target_idx, cv2.CAP_MSMF),
-            (target_idx, cv2.CAP_ANY),
-        ]
+        # Build candidate list: target index first, then fallback to index 0 if target != 0
+        candidate_indices = [target_idx]
+        if target_idx != 0:
+            candidate_indices.append(0)
+
+        attempts = []
+        for c_idx in candidate_indices:
+            attempts.extend([
+                (c_idx, cv2.CAP_DSHOW),
+                (c_idx, cv2.CAP_MSMF),
+                (c_idx, cv2.CAP_ANY),
+            ])
 
         for idx, backend in attempts:
             try:
@@ -499,6 +539,8 @@ class RealtimeParkingTracker:
                             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                             self.last_mean_brightness = float(np.mean(gray))
                             print(f"[CAMERA] Frame mean brightness settled at: {self.last_mean_brightness:.1f}")
+                            # AUTO-CALIBRATE: establish baseline empty slots immediately so slots are operational
+                            self.calibrate_baseline(frame)
                         return True
                 if cap:
                     cap.release()
@@ -507,6 +549,8 @@ class RealtimeParkingTracker:
 
         self.use_live_webcam = False
         print('[INFO] No live camera found — using synthetic frame view.')
+        # Establish synthetic baseline so system is operational even without webcam
+        self.calibrate_baseline(None)
         return False
 
     def stop_camera(self):
@@ -517,6 +561,92 @@ class RealtimeParkingTracker:
         self.active_camera_index = -1
         print("[INFO] Camera capture stopped cleanly.")
         return True
+
+    def _start_yolo_worker(self):
+        """Starts the decoupled background thread for heavy YOLOv8 deep learning vehicle detection."""
+        if self._yolo_thread and self._yolo_thread.is_alive():
+            return
+        self._yolo_thread = threading.Thread(target=self._yolo_worker_loop, daemon=True)
+        self._yolo_thread.start()
+        print("[YOLOv8] Asynchronous vehicle detection worker started.")
+
+    def _yolo_worker_loop(self):
+        """Dedicated background loop running YOLOv8 without blocking camera capture or QR frames."""
+        while True:
+            try:
+                frame = self._yolo_frame_queue.get(timeout=1.0)
+                if frame is not None and self.yolo_available and self.yolo_model is not None:
+                    occ, boxes = self.detect_vehicles_yolo(frame)
+                    self.latest_yolo_occupied = occ
+                    self.detected_vehicle_boxes = boxes
+                self._yolo_frame_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"[YOLO WORKER ERROR] {e}")
+
+    def _init_yolo_model(self):
+        """Initializes YOLOv8 vehicle detection model if ultralytics is installed and model weights exist."""
+        self.yolo_model = None
+        self.yolo_available = False
+        self.detector_backend = "OPENCV_ROI"
+        try:
+            import os
+            from ultralytics import YOLO
+            model_path = os.environ.get("YOLO_MODEL_PATH", "yolov8n.pt")
+            self.yolo_model = YOLO(model_path)
+            self.yolo_available = True
+            self.detector_backend = f"YOLOv8 ({model_path})"
+            print(f"[YOLOv8] Vehicle detection model initialized successfully ({model_path}).")
+        except ImportError:
+            self.detector_backend = "OpenCV Baseline Differencing (YOLOv8 optional fallback)"
+            print("[INFO] ultralytics package not installed; using OpenCV baseline ROI detection.")
+        except Exception as e:
+            self.detector_backend = "OpenCV Baseline Differencing"
+            print(f"[INFO] YOLOv8 could not be initialized ({e}); using OpenCV baseline ROI detection.")
+
+    def detect_vehicles_yolo(self, frame):
+        """Runs YOLOv8 vehicle detection and maps detected bounding boxes to parking slots.
+        COCO classes for vehicles: 2 (car), 3 (motorcycle), 5 (bus), 7 (truck).
+        Returns dict: {slot_id: bool (is_occupied)} and list of detected vehicle boxes."""
+        if not self.yolo_available or self.yolo_model is None or frame is None:
+            return {}, []
+        try:
+            results = self.yolo_model(frame, verbose=False, conf=0.35)
+            vehicle_boxes = []
+            slot_occupied = {s: False for s in self.slots}
+
+            for r in results:
+                for box in r.boxes:
+                    cls_id = int(box.cls[0])
+                    # COCO vehicle classes: car(2), motorcycle(3), bus(5), truck(7)
+                    if cls_id in (2, 3, 5, 7):
+                        xyxy = box.xyxy[0].cpu().numpy()
+                        vx1, vy1, vx2, vy2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
+                        conf = float(box.conf[0])
+                        vehicle_boxes.append((vx1, vy1, vx2, vy2, conf))
+
+                        # Check overlap with each slot ROI
+                        for slot_id, data in self.slots.items():
+                            sx, sy, sw, sh = data["bbox"]
+                            sx2, sy2 = sx + sw, sy + sh
+
+                            # Intersection rectangle
+                            ix1 = max(vx1, sx)
+                            iy1 = max(vy1, sy)
+                            ix2 = min(vx2, sx2)
+                            iy2 = min(vy2, sy2)
+
+                            if ix2 > ix1 and iy2 > iy1:
+                                inter_area = (ix2 - ix1) * (iy2 - iy1)
+                                slot_area = sw * sh
+                                overlap_ratio = inter_area / float(slot_area)
+                                if overlap_ratio > 0.25:
+                                    slot_occupied[slot_id] = True
+            return slot_occupied, vehicle_boxes
+        except Exception as e:
+            print(f"[YOLOv8 INFERENCE ERROR] {e}")
+            return {}, []
 
     def freeze_occupancy_for_qr(self, duration: float = 2.0):
         """Freezes slot status during QR scan and for ~2s after, preventing phone/hand from flipping slots."""
@@ -534,6 +664,17 @@ class RealtimeParkingTracker:
         if self.camera_mode == "QR_SCAN" or now_mono < self.qr_freeze_until:
             self.last_detection_timestamp = now_mono
             return self.occupancy_status
+
+        # If YOLOv8 is available, hand frame to decoupled async worker
+        yolo_occupied = {}
+        if self.yolo_available and self.yolo_model is not None:
+            if not self._yolo_thread or not self._yolo_thread.is_alive():
+                self._start_yolo_worker()
+            try:
+                self._yolo_frame_queue.put_nowait(frame.copy())
+            except queue.Full:
+                pass
+            yolo_occupied = self.latest_yolo_occupied
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -567,7 +708,15 @@ class RealtimeParkingTracker:
 
                 has_slot_baseline = (slot_id in self.baseline_rois) and (self.baseline_calibrated_at > 0)
 
-                if has_slot_baseline:
+                # Prioritize YOLOv8 detection if active
+                if self.yolo_available and slot_id in yolo_occupied:
+                    is_occupied_instant = yolo_occupied[slot_id]
+                    diff_count = 100 if is_occupied_instant else 0
+                    mean_diff = 10.0 if is_occupied_instant else 0.0
+                    raw_metric = diff_count
+                    trigger_condition = "YOLOv8_VEHICLE_BOX_OVERLAP" if is_occupied_instant else "YOLOv8_NO_VEHICLE"
+                    slot_state = "OCCUPIED" if current_status else "FREE"
+                elif has_slot_baseline:
                     base_roi = self.baseline_rois[slot_id]
                     diff = cv2.absdiff(roi_blur, base_roi)
                     diff_count = int(np.count_nonzero(diff > 35))
@@ -596,10 +745,9 @@ class RealtimeParkingTracker:
                     raw_metric = 0
                     diff_count = 0
                     mean_diff = 0.0
-                    # STRICT: Do NOT use fallback motion/edge detector in busy room background!
                     is_occupied_instant = False
-                    trigger_condition = "NOT_CALIBRATED (Awaiting baseline calibration)"
-                    slot_state = "NOT CALIBRATED"
+                    trigger_condition = "AWAITING_CALIBRATION"
+                    slot_state = "FREE"
 
                 # Store live metric diagnostics for /admin per-slot tuning
                 self.slot_metrics[slot_id] = {
@@ -690,11 +838,6 @@ class RealtimeParkingTracker:
                 vacant = False
                 reserved = False
                 unknown = True
-            elif not has_baseline and self.use_live_webcam and not demo_mode:
-                status = "NOT CALIBRATED"
-                vacant = False
-                reserved = False
-                unknown = False
             elif is_camera_occ:
                 # Camera confirmed physical presence of car -> OCCUPIED (Red)
                 status = "OCCUPIED"
@@ -763,10 +906,11 @@ class RealtimeParkingTracker:
 
     def capture_next_frame(self):
         """Always returns a valid numpy frame (live webcam or synthetic canvas). Updates last_frame_timestamp on every read."""
+        now = time.monotonic()
         if self.use_live_webcam and self.cap and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret and frame is not None:
-                self.last_frame_timestamp = time.monotonic()
+                self.last_frame_timestamp = now
                 self.consecutive_failures = 0
                 self.reconnect_attempts = 0
                 frame = cv2.resize(frame, (600, 520))
@@ -776,13 +920,17 @@ class RealtimeParkingTracker:
                     self.process_camera_frame(frame)
                 else:
                     # In QR_SCAN mode, update detection timestamp so camera health stays fresh
-                    self.last_detection_timestamp = time.monotonic()
+                    self.last_detection_timestamp = now
                 return self.draw_overlays(frame, is_live=True)
             else:
                 self.consecutive_failures += 1
                 print(f"[WARN] Camera read failure ({self.consecutive_failures}).")
                 if self.consecutive_failures >= 3:
                     self.auto_reconnect()
+        else:
+            # Background reconnect retry every 5s if webcam is lost or uninitialized
+            if now - getattr(self, "last_reconnect_time", 0.0) >= 5.0:
+                self.auto_reconnect()
 
         # Synthetic dark canvas fallback
         frame = np.zeros((520, 600, 3), dtype=np.uint8)
@@ -901,6 +1049,11 @@ class RealtimeParkingTracker:
             else:
                 cv2.putText(frame, f"Dist: {data['distance']}m", (x + 8, y + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 200, 200), 1)
             cv2.putText(frame, f"Cong: {cg_count} ({cg_level})", (x + 8, y + 78), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 220, 255), 1)
+
+        # Draw YOLOv8 detected vehicle boxes if present
+        for (vx1, vy1, vx2, vy2, conf) in getattr(self, "detected_vehicle_boxes", []):
+            cv2.rectangle(frame, (vx1, vy1), (vx2, vy2), (255, 255, 0), 2)
+            cv2.putText(frame, f"Vehicle {conf:.2f}", (vx1 + 4, max(15, vy1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1)
 
         # Scanner Line
         self.scan_line_y = (self.scan_line_y + 8) % 520

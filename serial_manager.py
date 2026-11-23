@@ -28,7 +28,8 @@ from air_quality_monitor import process_serial_json
 
 # ---------------------------------------------------------------------------
 # CONFIG
-SERIAL_PORT = "COM7"          # Project default: COM7 @ 9600 baud
+import os
+SERIAL_PORT = os.getenv("ARDUINO_PORT", "COM6")  # Hardware default: COM6 @ 9600 baud
 BAUD_RATE = 9600
 RECONNECT_SECONDS = 5
 BOOT_WAIT_SECONDS = 2.5       # Nano resets when the port opens
@@ -60,9 +61,17 @@ class SerialManager:
         self.last_air = None            # last processed air alert dict
         self.last_air_level = None
         self.last_ir_event = None
-        self.recent_lines = []
+        self.recent_lines = collections.deque(maxlen=50)
         self.on_ir_entry_callback = None  # Called on IR_ENTRY event
         self.on_ir_exit_callback = None   # Called on IR_EXIT event
+
+        # Hardware diagnostics & acknowledgement tracking
+        self.last_command_sent = None
+        self.last_command_received = None
+        self.servo_state = "CLOSED"
+        self.gate_state = "CLOSED"
+        self.last_hw_ack = None
+        self._ack_event = threading.Event()
 
     # ------------------------------------------------------------------
     # public API
@@ -79,14 +88,31 @@ class SerialManager:
         """Send one command line to the Arduino. Returns True if written."""
         with self._write_lock:
             if not self.connected or self._ser is None:
+                print(f"[SERIAL SEND BLOCKED] Cannot send '{command}': Port not connected.")
                 return False
             try:
-                self._ser.write((command.strip() + "\n").encode("utf-8"))
+                cmd_clean = command.strip()
+                self._ack_event.clear()
+                self.last_command_sent = {"command": cmd_clean, "time": datetime.now().isoformat()}
+                print(f"[SERIAL SEND] Backend -> Arduino ({self.port}): '{cmd_clean}'")
+                self._ser.write((cmd_clean + "\n").encode("utf-8"))
                 self._ser.flush()
                 return True
             except (serial.SerialException, OSError) as e:
                 self.last_error = str(e)
+                print(f"[SERIAL SEND ERROR] Failed to send '{command}': {e}")
                 return False
+
+    def wait_for_ack(self, timeout: float = 1.5) -> dict:
+        """Waits for Arduino firmware to acknowledge receipt of command via 'Received: ...'"""
+        acked = self._ack_event.wait(timeout=timeout)
+        return {
+            "sent": self.last_command_sent,
+            "received_ack": self.last_command_received if acked else None,
+            "servo_state": self.servo_state,
+            "gate_state": self.gate_state,
+            "acknowledged": acked
+        }
 
     def status(self) -> dict:
         return {
@@ -96,6 +122,10 @@ class SerialManager:
             "last_error": self.last_error,
             "last_air": self.last_air,
             "last_ir_event": self.last_ir_event,
+            "last_command_sent": self.last_command_sent,
+            "last_command_received": self.last_command_received,
+            "servo_state": self.servo_state,
+            "gate_state": self.gate_state,
             "recent_lines": list(self.recent_lines)[-10:],
         }
 
@@ -125,17 +155,17 @@ class SerialManager:
         ports_to_try = []
         env_port = os.getenv("ARDUINO_PORT")
         if env_port and env_port.upper() != "AUTO":
-            ports_to_try.append((env_port, "env"))
+            ports_to_try.append((env_port, f"env ({env_port})"))
         else:
-            if SERIAL_PORT:
-                ports_to_try.append((SERIAL_PORT, "configured (COM7)"))
+            # 1. Prioritize auto-detection of CH340 / USB-Serial / Arduino device
             auto_port = find_arduino_port()
-            if auto_port and auto_port != SERIAL_PORT:
-                ports_to_try.append((auto_port, "auto-detect"))
-
-        if not ports_to_try:
-            self.last_error = "No Arduino port found"
-            return False
+            if auto_port:
+                ports_to_try.append((auto_port, f"auto-detect ({auto_port})"))
+            
+            # 2. Add known hardware ports (COM6 previously used with CH340, COM7 project default)
+            for default_p in ("COM6", "COM7", SERIAL_PORT):
+                if default_p and not any(p == default_p for p, _ in ports_to_try):
+                    ports_to_try.append((default_p, f"fallback ({default_p})"))
 
         ser = None
         used_mode = "unknown"
@@ -216,6 +246,31 @@ class SerialManager:
                     self.on_ir_exit_callback()
                 except Exception as cb_err:
                     print(f"[SERIAL] IR exit callback error: {cb_err}")
+            return
+
+        # --- Servo and Gate events --------------------------------------
+        if line.startswith("Received:"):
+            self.last_command_received = line
+            self._ack_event.set()
+            print(f"[ARDUINO ACK] Firmware Confirmed: '{line}'")
+            return
+
+        if line == "SERVO_OPEN":
+            self.servo_state = "OPEN"
+            self.last_hw_ack = line
+            print(f"[SERVO ACTUATION] Servo Pin D6 commanded to 90 degrees (GATE OPEN)")
+            return
+
+        if line == "SERVO_CLOSE":
+            self.servo_state = "CLOSED"
+            self.last_hw_ack = line
+            print(f"[SERVO ACTUATION] Servo Pin D6 commanded to 0 degrees (GATE CLOSED)")
+            return
+
+        if line in ("ENTRY_GATE_OPENED", "EXIT_GATE_OPENED", "GATE_CLOSED"):
+            self.gate_state = line
+            self.last_hw_ack = line
+            print(f"[HARDWARE GATE STATUS] {line}")
             return
 
         # --- everything else (acknowledgements etc.) --------------------

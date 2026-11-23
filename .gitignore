@@ -4,3 +4,6 @@ __pycache__/
 venv/
 scratch/
 smart_parking_backup_*.db
+
+# Model weights
+*.pt

@@ -77,6 +77,9 @@ def main():
     global last_text, last_time, banner
 
     force_local = os.environ.get("FORCE_LOCAL_CAMERA", "0") == "1"
+    cap = None
+    use_http_fallback = False
+
     if not force_local and not STREAM_URL:
         use_http_fallback = True
         print(f"[INFO] Using shared app.py camera stream ({FRAME_URL}) — no camera device locking.")

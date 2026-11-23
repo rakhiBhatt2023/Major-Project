@@ -61,8 +61,41 @@ import queue
 
 _latest_frame_lock = threading.Lock()
 _latest_frame = None
-_qr_frame_queue = queue.Queue(maxsize=2)
+_latest_frame_time = 0.0
+_qr_frame_queue = queue.Queue(maxsize=4)
 _qr_detector = cv2.QRCodeDetector()
+
+cam_thread = None
+qr_thread = None
+lcd_thread = None
+_services_started = False
+_services_lock = threading.Lock()
+
+
+def start_background_services():
+    """Starts or revives background threads safely (camera capture, QR worker, serial manager, LCD sync)."""
+    global cam_thread, qr_thread, lcd_thread, _services_started
+    with _services_lock:
+        if cam_thread is None or not cam_thread.is_alive():
+            cam_thread = threading.Thread(target=_camera_thread, daemon=True)
+            cam_thread.start()
+            print("[THREAD] Background camera capture thread started.")
+
+        if qr_thread is None or not qr_thread.is_alive():
+            qr_thread = threading.Thread(target=_qr_worker_thread, daemon=True)
+            qr_thread.start()
+            print("[THREAD] Decoupled QR worker thread started.")
+
+        if not serial_manager.connected and not (serial_manager._thread and serial_manager._thread.is_alive()):
+            serial_manager.start()
+            print("[THREAD] Arduino serial manager started.")
+
+        if lcd_thread is None or not lcd_thread.is_alive():
+            lcd_thread = threading.Thread(target=_lcd_sync_thread, daemon=True)
+            lcd_thread.start()
+            print("[THREAD] LCD sync thread started.")
+        _services_started = True
+
 
 _handled_qrs = {}            # {qr_text: {"handled_at": timestamp, "action": "entry"/"exit"}}
 _qr_last_seen = {}           # {qr_text: timestamp}
@@ -158,25 +191,25 @@ def process_scanned_qr(qr_text: str):
 
 
 def _on_arduino_ir_entry():
-    """Callback invoked when the Arduino reports IR_ENTRY (car at entry gate)."""
-    print("[AUTO-SWITCH] IR_ENTRY detected from Arduino -> switching camera to QR_SCAN mode in ENTRY direction.")
-    tracker.set_camera_mode("QR_SCAN", reason="Vehicle at entry gate (IR_ENTRY)")
+    """Callback invoked when the Arduino reports IR_ENTRY (car at entry gate).
+    Delegates to gate_routes.handle_ir_event which enforces auto gate mode rules,
+    30s manual direction guard, and cooldowns."""
     try:
-        from gate_routes import stepper, set_gate_direction
-        set_gate_direction("ENTRY")
-        stepper.on_vehicle_at_gate("IR_ENTRY")
+        from gate_routes import handle_ir_event
+        switched, reason = handle_ir_event("IR_ENTRY", from_serial=True)
+        print(f"[ARDUINO IR_ENTRY] handle_ir_event: switched={switched}, reason={reason}")
     except Exception as e:
         print(f"[IR CALLBACK ERROR] {e}")
 
 
 def _on_arduino_ir_exit():
-    """Callback invoked when the Arduino reports IR_EXIT (car at exit gate)."""
-    print("[AUTO-SWITCH] IR_EXIT detected from Arduino -> switching camera to QR_SCAN mode in EXIT direction.")
-    tracker.set_camera_mode("QR_SCAN", reason="Vehicle at exit gate (IR_EXIT)")
+    """Callback invoked when the Arduino reports IR_EXIT (car at exit gate).
+    Delegates to gate_routes.handle_ir_event which enforces auto gate mode rules,
+    30s manual direction guard, and cooldowns."""
     try:
-        from gate_routes import stepper, set_gate_direction
-        set_gate_direction("EXIT")
-        stepper.on_vehicle_at_gate("IR_EXIT")
+        from gate_routes import handle_ir_event
+        switched, reason = handle_ir_event("IR_EXIT", from_serial=True)
+        print(f"[ARDUINO IR_EXIT] handle_ir_event: switched={switched}, reason={reason}")
     except Exception as e:
         print(f"[IR CALLBACK ERROR] {e}")
 
@@ -189,7 +222,7 @@ serial_manager.on_ir_exit_callback = _on_arduino_ir_exit
 def _camera_thread():
     """Runs forever in a daemon thread — captures frames, updates timestamps, caches latest frame.
     NEVER blocks on QR decoding or database/API calls."""
-    global _latest_frame
+    global _latest_frame, _latest_frame_time
     frame_counter = 0
     while True:
         try:
@@ -209,6 +242,7 @@ def _camera_thread():
                 if ret:
                     with _latest_frame_lock:
                         _latest_frame = buffer.tobytes()
+                        _latest_frame_time = time.monotonic()
 
                 # Offer frame to QR worker thread non-blockingly
                 frame_counter += 1
@@ -219,7 +253,7 @@ def _camera_thread():
                         pass
         except Exception as e:
             print(f'[CAM THREAD ERROR] {e}')
-        time.sleep(0.05)   # ~20 FPS capture
+        time.sleep(0.04)   # ~25 FPS capture
 
 
 def _qr_worker_thread():
@@ -266,14 +300,19 @@ def _lcd_sync_thread():
         time.sleep(2)
 
 
+# Auto-start services on module load so threads are active immediately
+start_background_services()
+
+
 def _get_cached_frame():
-    """Returns the latest JPEG bytes, or captures a frame, or returns a fallback placeholder."""
-    global _latest_frame
+    """Returns the latest JPEG bytes, or captures a frame directly if cached frame is older than 2.0s."""
+    global _latest_frame, _latest_frame_time
+    now = time.monotonic()
     with _latest_frame_lock:
-        if _latest_frame is not None:
+        if _latest_frame is not None and (now - _latest_frame_time) < 2.0:
             return _latest_frame
 
-    # If background thread hasn't produced a frame yet, capture directly
+    # If background thread hasn't produced a fresh frame within 2.0s, capture directly
     try:
         f = tracker.capture_next_frame()
         if f is not None:
@@ -281,12 +320,25 @@ def _get_cached_frame():
             if ret:
                 with _latest_frame_lock:
                     _latest_frame = buf.tobytes()
+                    _latest_frame_time = time.monotonic()
                 return buf.tobytes()
     except Exception as e:
         print(f"[CAMERA DIAGNOSTIC] Direct capture failed: {e}")
 
-    blank = np.zeros((520, 600, 3), dtype=np.uint8)
-    _, buf = cv2.imencode('.jpg', blank)
+    # Fallback to last known frame if available
+    with _latest_frame_lock:
+        if _latest_frame is not None:
+            return _latest_frame
+
+    # Informative diagnostic fallback canvas instead of pitch-black image
+    placeholder = np.zeros((520, 600, 3), dtype=np.uint8)
+    placeholder[:] = (15, 23, 42)  # Dark slate background
+    cv2.rectangle(placeholder, (0, 0), (600, 44), (30, 41, 59), -1)
+    cv2.putText(placeholder, "CAMERA STATUS: INITIALIZING / STANDBY", (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (239, 68, 68), 2)
+    unhealthy_why = tracker.get_unhealthy_reason() if hasattr(tracker, 'get_unhealthy_reason') else "Offline"
+    cv2.putText(placeholder, f"Diagnostics: {unhealthy_why}", (40, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (226, 232, 240), 1)
+    cv2.putText(placeholder, "Awaiting next video frame...", (40, 265), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (148, 163, 184), 1)
+    _, buf = cv2.imencode('.jpg', placeholder, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return buf.tobytes()
 
 
@@ -304,6 +356,12 @@ def generate_video_stream():
 # ─────────────────────────────────────────────────────────────────────────────
 
 _demo_mode = False
+
+
+@app.before_request
+def _ensure_background_services():
+    if not _services_started or (cam_thread and not cam_thread.is_alive()):
+        start_background_services()
 
 
 @app.route('/')
@@ -423,16 +481,22 @@ def api_system_status():
                 "message": "Simulated air reading within safe range."
             }
 
-    from gate_routes import get_gate_direction
+    from gate_routes import get_gate_direction, get_auto_gate_mode, is_manual_override_active
+    frame_age = round(time.monotonic() - _latest_frame_time, 2) if _latest_frame_time > 0 else None
     return jsonify({
         'camera_active': cam_active,
+        'camera_healthy': is_cam_healthy,
+        'camera_thread_alive': bool(cam_thread and cam_thread.is_alive()),
         'camera_unhealthy_reason': unhealthy_reason,
+        'frame_age_seconds': frame_age,
         'total_slots': len(feed),
         'vacant_slots': sum(1 for s in feed.values() if s['vacant']),
         'arduino': ard_status,
         'demo_mode': _demo_mode,
         'camera_mode': tracker.camera_mode,
         'gate_direction': get_gate_direction(),
+        'auto_gate_mode': get_auto_gate_mode(),
+        'manual_active': is_manual_override_active(),
         'last_mode_change': mode_info.get("last_mode_change"),
         'last_mode_change_iso': mode_info.get("last_mode_change_iso"),
         'qr_banner': tracker.qr_banner,
@@ -636,25 +700,7 @@ def api_preset(scenario_id):
 
 if __name__ == '__main__':
     print("Starting Smart Green Parking System at http://127.0.0.1:5000 ...")
-
-    # Start background camera thread BEFORE Flask begins serving requests
-    cam_thread = threading.Thread(target=_camera_thread, daemon=True)
-    cam_thread.start()
-    print("[THREAD] Background camera capture thread started.")
-
-    # Start decoupled QR decoding worker thread
-    qr_thread = threading.Thread(target=_qr_worker_thread, daemon=True)
-    qr_thread.start()
-    print("[THREAD] Decoupled QR worker thread started.")
-
-    # Objectives 1 + 3 - ONE serial manager for gate commands + MQ-135 readings
-    serial_manager.start()
-    print("[THREAD] Arduino serial manager started.")
-
-    # Keep the Arduino LCD slot count in step with the software
-    lcd_thread = threading.Thread(target=_lcd_sync_thread, daemon=True)
-    lcd_thread.start()
-    print("[THREAD] LCD sync thread started.")
+    start_background_services()
 
     # use_reloader=False prevents Flask from spawning a 2nd process that
     # would steal the camera handle (and the serial port) from the main process.

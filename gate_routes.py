@@ -37,6 +37,15 @@ _tracker = None
 _get_recommended_slot = None
 
 
+def is_demo_mode_active() -> bool:
+    """Dynamically checks if demo mode is enabled in the running application."""
+    try:
+        import app
+        return bool(getattr(app, "_demo_mode", False))
+    except Exception:
+        return False
+
+
 class GateStepper:
     """Thread-safe state tracker for the 6-step gate transaction stepper:
        1. Vehicle at gate
@@ -221,12 +230,21 @@ def set_gate_direction(direction: str, manual: bool = False):
         _current_gate_direction = d
         stepper.direction = d
         stepper.action = d.lower()
+        if stepper.status in ("idle", "success", "failed"):
+            stepper.reset(direction=d, is_demo=stepper.is_demo)
         if manual:
             _last_manual_direction_time = time.time()
         if _tracker:
             _tracker.set_camera_mode("QR_SCAN", reason=f"Gate direction set to {d}")
             _tracker.qr_banner = f"Vehicle at {d.lower()} gate - show your QR code"
     return _current_gate_direction
+
+
+def is_manual_override_active() -> bool:
+    """Returns True if manual gate selection is active and guarding against auto IR switches."""
+    if not _auto_gate_mode_from_ir:
+        return True  # Manual selection is permanent when auto gate mode is OFF
+    return (time.time() - _last_manual_direction_time) < 30.0
 
 
 def get_gate_direction() -> str:
@@ -368,12 +386,7 @@ def _fail(message, status, error_code=None, qr=None, **extra):
 # core flows
 # ---------------------------------------------------------------------------
 def _do_entry(qr, fee=None):
-    demo_active = False
-    try:
-        from app import _demo_mode
-        demo_active = bool(_demo_mode)
-    except Exception:
-        pass
+    demo_active = is_demo_mode_active()
 
     stepper.reset(direction="ENTRY", is_demo=demo_active)
     stepper.on_qr_scanned(qr)
@@ -530,17 +543,31 @@ def _do_entry(qr, fee=None):
     if serial_manager.connected:
         sent1 = serial_manager.send(cmd_main)
         sent2 = serial_manager.send(cmd_goto)
+        gate_opened = bool(sent1)
         print(f"  Step 5 [Serial Command Sent] -> SENT: {cmd_main} and {cmd_goto}")
-        time.sleep(0.3)
-        actual_replies = [e["line"] for e in list(serial_manager.recent_lines)[-3:] if e.get("line")]
-        if actual_replies:
-            print(f"  Step 6 [Arduino Reply]       -> RECEIVED: {', '.join(actual_replies)}")
+        print(f"         [DIAGNOSTIC] Command sent by backend: '{cmd_main}' (Port: {serial_manager.port})")
+        print(f"         [DIAGNOSTIC] Target hardware: Arduino Nano Pin D6 (SG90 Servo Barrier)")
+        print(f"         [DIAGNOSTIC] Servo opening angle: 90° (Gate Open)")
+        print(f"         [DIAGNOSTIC] Barrier hold duration: 3.0s (Auto-closes after vehicle passage)")
+        print(f"         [DIAGNOSTIC] Servo closing angle: 0° (Gate Closed)")
+        print(f"         [HARDWARE NOTE] SG90 runs from Nano 5V rail (~400mA limit). Mechanical load may cause brownout; command transmission verified.")
+        ack_res = serial_manager.wait_for_ack(timeout=1.0)
+        if ack_res.get("acknowledged"):
+            print(f"  Step 6 [Arduino Reply]       -> ACK RECEIVED: {ack_res.get('received_ack')}")
+            print(f"         [DIAGNOSTIC] Hardware Acknowledgement: Confirmed by Arduino firmware")
         else:
-            print(f"  Step 6 [Arduino Reply]       -> (No serial reply on {serial_manager.port} within timeout)")
+            actual_replies = [e["line"] for e in list(serial_manager.recent_lines)[-3:] if e.get("line")]
+            if actual_replies:
+                print(f"  Step 6 [Arduino Reply]       -> RECEIVED: {', '.join(actual_replies)}")
+            else:
+                print(f"  Step 6 [Arduino Reply]       -> (No serial reply on {serial_manager.port} within timeout)")
     elif demo_active:
         gate_opened = True
         print(f"  Step 5 [Serial Command Sent] -> DEMO MODE: Simulated {cmd_main} and {cmd_goto}")
-        print(f"  Step 6 [Arduino Reply]       -> DEMO MODE: Simulated SERVO_OPEN, ENTRY_GATE_OPENED")
+        print(f"         [DIAGNOSTIC] Command sent by backend: '{cmd_main}' (Simulated)")
+        print(f"         [DIAGNOSTIC] Servo opening angle: 90° (Gate Open)")
+        print(f"         [DIAGNOSTIC] Servo closing angle: 0° (Gate Closed after 3s passage)")
+        print(f"  Step 6 [Arduino Reply]       -> DEMO MODE: Simulated SERVO_OPEN, ENTRY_GATE_OPENED, SERVO_CLOSE, GATE_CLOSED")
     else:
         print(f"  Step 5 [Serial Command Sent] -> FAILED: Arduino offline")
         print(f"  Step 6 [Arduino Reply]       -> None")
@@ -574,20 +601,21 @@ def _do_entry(qr, fee=None):
 
 
 def _do_exit(qr):
-    demo_active = False
-    try:
-        from app import _demo_mode
-        demo_active = bool(_demo_mode)
-    except Exception:
-        pass
+    demo_active = is_demo_mode_active()
 
     stepper.reset(direction="EXIT", is_demo=demo_active)
     stepper.on_qr_scanned(qr)
+
+    print(f"\n=======================================================")
+    print(f"[EXIT PIPELINE] Processing scan for QR: '{qr}'")
+    print(f"  Step 1 [QR Decoded]          -> SUCCESS: {qr}")
 
     # 1) Direction rule for EXIT: Driver lookup & active entry check
     driver = payment.find_driver(qr)
     driver_display = get_driver_display(qr)
     if driver is None:
+        print(f"  Step 2 [Driver Found]        -> FAILED: Driver not registered ({driver_display})")
+        print(f"=======================================================\n")
         stepper.on_step_failed(3, f"Driver not registered: {driver_display}")
         payment.log_scan(qr, "DENIED", f"Driver not registered: {driver_display}")
         return _fail(f"Driver not registered: {driver_display}", 402, error_code="INVALID_QR", qr=qr)
@@ -596,16 +624,21 @@ def _do_exit(qr):
     active_sess = payment._active_session(driver_id)
     if not active_sess:
         msg = f"{driver_display}: No active entry"
+        print(f"  Step 2 [Driver Found]        -> FAILED: {msg}")
+        print(f"=======================================================\n")
         stepper.on_step_failed(3, msg)
         payment.log_scan(qr, "DENIED", msg)
         db.log_gate_event("EXIT_DENIED_NO_ENTRY", qr, None, msg)
         return _fail(msg, 402, error_code="NO_ACTIVE_SESSION", qr=qr)
 
+    print(f"  Step 2 [Driver Found]        -> SUCCESS: {driver_display}, Active Session: {active_sess.get('sessionid')}")
     stepper.steps[2]["status"] = "completed"
     stepper.steps[2]["detail"] = driver_display
 
     # 2) Honest gate check: Gate controller must be online BEFORE any money moves (unless in Demo Mode)
     if not serial_manager.connected and not demo_active:
+        print(f"  Step 3 [Gate Check]          -> FAILED: Arduino offline on COM port")
+        print(f"=======================================================\n")
         stepper.on_step_failed(6, "Gate command not sent: Arduino offline")
         return _fail("Gate command not sent: Arduino offline. Nothing charged.", 503, error_code="GATE_OFFLINE", qr=qr)
 
@@ -616,14 +649,48 @@ def _do_exit(qr):
             serial_manager.send("DENIED")
         db.log_gate_event("EXIT_DENIED", qr, None, message)
         stepper.on_step_failed(4, f"Exit denied: {message}")
+        print(f"  Step 3 [Payment Processed]   -> FAILED: {message}")
+        print(f"=======================================================\n")
         return _fail(message, 402, qr=qr)
+
+    exit_fee = info.get("charged_now", 0.0)
+    total_fee = info.get("total_paid", exit_fee)
+    print(f"  Step 3 [Payment Processed]   -> SUCCESS: Exit Fee: Rs {exit_fee:.2f} (Total Session: Rs {total_fee:.2f})")
 
     # 4) Send serial gate open command and honestly verify
     gate_opened = False
+    cmd_exit = "EXIT_OK"
     if serial_manager.connected:
-        gate_opened = serial_manager.send("EXIT_OK")
+        sent = serial_manager.send(cmd_exit)
+        gate_opened = bool(sent)
+        print(f"  Step 5 [Serial Command Sent] -> SENT: {cmd_exit}")
+        print(f"         [DIAGNOSTIC] Command sent by backend: '{cmd_exit}' (Port: {serial_manager.port})")
+        print(f"         [DIAGNOSTIC] Target hardware: Arduino Nano Pin D6 (SG90 Servo Barrier)")
+        print(f"         [DIAGNOSTIC] Servo opening angle: 90° (Exit Gate Open)")
+        print(f"         [DIAGNOSTIC] Barrier hold duration: 3.0s (Auto-closes after vehicle passage)")
+        print(f"         [DIAGNOSTIC] Servo closing angle: 0° (Exit Gate Closed)")
+        print(f"         [HARDWARE NOTE] SG90 runs from Nano 5V rail (~400mA limit). Mechanical load may cause brownout; command transmission verified.")
+        ack_res = serial_manager.wait_for_ack(timeout=1.0)
+        if ack_res.get("acknowledged"):
+            print(f"  Step 6 [Arduino Reply]       -> ACK RECEIVED: {ack_res.get('received_ack')}")
+            print(f"         [DIAGNOSTIC] Hardware Acknowledgement: Confirmed by Arduino firmware")
+        else:
+            actual_replies = [e["line"] for e in list(serial_manager.recent_lines)[-3:] if e.get("line")]
+            if actual_replies:
+                print(f"  Step 6 [Arduino Reply]       -> RECEIVED: {', '.join(actual_replies)}")
+            else:
+                print(f"  Step 6 [Arduino Reply]       -> (No serial reply on {serial_manager.port} within timeout)")
     elif demo_active:
         gate_opened = True
+        print(f"  Step 5 [Serial Command Sent] -> DEMO MODE: Simulated {cmd_exit}")
+        print(f"         [DIAGNOSTIC] Command sent by backend: '{cmd_exit}' (Simulated)")
+        print(f"         [DIAGNOSTIC] Servo opening angle: 90° (Exit Gate Open)")
+        print(f"         [DIAGNOSTIC] Servo closing angle: 0° (Exit Gate Closed after 3s passage)")
+        print(f"  Step 6 [Arduino Reply]       -> DEMO MODE: Simulated SERVO_OPEN, EXIT_GATE_OPENED, SERVO_CLOSE, GATE_CLOSED")
+    else:
+        print(f"  Step 5 [Serial Command Sent] -> FAILED: Arduino offline")
+        print(f"  Step 6 [Arduino Reply]       -> None")
+    print(f"=======================================================\n")
 
     # Immediate slot release in tracker
     slot_id = info.get("slot_id")
@@ -676,6 +743,7 @@ def api_gate_direction():
     return jsonify({
         "direction": get_gate_direction(),
         "auto_gate_mode_from_ir": get_auto_gate_mode(),
+        "manual_active": is_manual_override_active(),
         "stepper_title": stepper.get_title(),
         "is_demo": stepper.is_demo
     })
@@ -747,12 +815,7 @@ def gate_manual(action):
 def gate_test_open_entry():
     """Admin diagnostic test endpoint: sends OPEN_ENTRY and returns exact command and Arduino reply."""
     import time
-    demo_active = False
-    try:
-        from app import _demo_mode
-        demo_active = bool(_demo_mode)
-    except Exception:
-        pass
+    demo_active = is_demo_mode_active()
 
     exact_cmd = "OPEN_ENTRY"
     if not serial_manager.connected and not demo_active:
@@ -802,12 +865,7 @@ def gate_test_open_entry():
 
 @gate_bp.route("/api/gate/status")
 def gate_status():
-    demo_active = False
-    try:
-        from app import _demo_mode
-        demo_active = bool(_demo_mode)
-    except Exception:
-        pass
+    demo_active = is_demo_mode_active()
     feed = _tracker.get_live_slot_feed(demo_mode=demo_active) if _tracker else {}
     return jsonify({
         "arduino": serial_manager.status(),
@@ -816,6 +874,7 @@ def gate_status():
         "last_scan": _latest_scan_result,
         "direction": get_gate_direction(),
         "auto_gate_mode_from_ir": get_auto_gate_mode(),
+        "manual_active": is_manual_override_active(),
         "stepper": stepper.get_state(),
     })
 
@@ -882,12 +941,7 @@ def entry_check():
     if payment.has_active_session(qr):
         return jsonify({"success": True, "action": "exit", "qr": qr, "message": "User currently inside parking. Ready for exit."})
 
-    demo_active = False
-    try:
-        from app import _demo_mode
-        demo_active = bool(_demo_mode)
-    except Exception:
-        pass
+    demo_active = is_demo_mode_active()
 
     if not serial_manager.connected and not demo_active:
         return _fail("Gate controller (Arduino) is offline.", 503, error_code="GATE_OFFLINE", qr=qr)

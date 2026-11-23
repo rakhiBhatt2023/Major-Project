@@ -110,54 +110,69 @@ def log_scan(qr_text, result, message):
 # ---------------------------------------------------------------------------
 # LOOKUPS
 # ---------------------------------------------------------------------------
+def normalize_driver_token(token: str) -> str:
+    """Normalizes driver identifiers: handles UUIDs, URLs, compound strings, and casing."""
+    if not token:
+        return ""
+    t = str(token).strip().strip('"\'').strip()
+    # Handle URL/URI formats (e.g. http://.../<uuid> or smartpark://<uuid>)
+    if "/" in t:
+        parts = [p.strip() for p in t.split("/") if p.strip()]
+        if parts:
+            t = parts[-1]
+    # Handle composite formats like UUID:CAR or UUID|CAR
+    if ":" in t:
+        t = t.split(":", 1)[0].strip()
+    elif "|" in t:
+        t = t.split("|", 1)[0].strip()
+    # Standardize valid UUID strings to lowercase canonical form
+    try:
+        val = uuid.UUID(t)
+        return str(val).lower()
+    except Exception:
+        pass
+    return t.strip()
+
+
 def find_driver(qr_text):
-    """Supports DRIVER_ID:CAR_NUMBER, DRIVER_ID|..., plain driver_id, and vehicle_no."""
+    """Supports DRIVER_ID, vehicle_no, DRIVER_ID:CAR_NUMBER, DRIVER_ID|..., URLs, and case-insensitive UUID matching."""
     if not qr_text:
         return None
-    raw = str(qr_text).strip()
+    raw = str(qr_text).strip().strip('"\'')
     if not raw:
         return None
+
+    # Candidate variations to match
+    candidates = []
+    norm = normalize_driver_token(raw)
+    if norm and norm not in candidates:
+        candidates.append(norm)
+    if raw not in candidates:
+        candidates.append(raw)
+    if ":" in raw:
+        car_part = raw.split(":", 1)[1].strip()
+        if car_part and car_part not in candidates:
+            candidates.append(car_part)
+    if "|" in raw:
+        car_part = raw.split("|", 1)[1].strip()
+        if car_part and car_part not in candidates:
+            candidates.append(car_part)
 
     conn = _conn()
     cur = conn.cursor()
 
-    # 1. Direct match on driver_id or vehicle_no
-    cur.execute("""
-        SELECT driver_id, name, vehicle_no, phone, wallet,
-               name AS driver, vehicle_no AS vehicle, wallet AS wallet_balance
-        FROM drivers WHERE driver_id = ? OR vehicle_no = ?
-    """, (raw, raw))
-    row = cur.fetchone()
-    if row:
-        conn.close()
-        return dict(row)
-
-    # 2. Match candidate before ':' or '|' (e.g. DRIVER_ID:CAR_NUMBER or DRIVER_ID|...)
-    candidate = raw.split(":")[0].split("|")[0].strip()
-    if candidate and candidate != raw:
+    for cand in candidates:
         cur.execute("""
             SELECT driver_id, name, vehicle_no, phone, wallet,
                    name AS driver, vehicle_no AS vehicle, wallet AS wallet_balance
-            FROM drivers WHERE driver_id = ? OR vehicle_no = ?
-        """, (candidate, candidate))
+            FROM drivers
+            WHERE LOWER(TRIM(driver_id)) = LOWER(TRIM(?))
+               OR LOWER(TRIM(vehicle_no)) = LOWER(TRIM(?))
+        """, (cand, cand))
         row = cur.fetchone()
         if row:
             conn.close()
             return dict(row)
-
-    # 3. If ':' was present, check if the second part matches vehicle_no
-    if ":" in raw:
-        car_part = raw.split(":", 1)[1].strip()
-        if car_part:
-            cur.execute("""
-                SELECT driver_id, name, vehicle_no, phone, wallet,
-                       name AS driver, vehicle_no AS vehicle, wallet AS wallet_balance
-                FROM drivers WHERE vehicle_no = ?
-            """, (car_part,))
-            row = cur.fetchone()
-            if row:
-                conn.close()
-                return dict(row)
 
     conn.close()
     return None
@@ -220,7 +235,7 @@ def _active_session(driver_id):
     conn = _conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT sessionid, entrytime, fee FROM sessions
+        SELECT sessionid, entrytime, fee, status FROM sessions
         WHERE driver_id = ? AND status = 'ACTIVE'
         ORDER BY sessionid DESC LIMIT 1
     """, (driver_id,))
@@ -291,6 +306,7 @@ def start_entry(qr_text, slot_id, fee=ENTRY_FEE):
         "driver": driver["name"],
         "vehicle": driver["vehicle_no"],
         "fee": fee,
+        "charged_now": fee,
         "wallet_before": wallet,
         "wallet_after": wallet - fee,
         "slot_id": slot_id,
